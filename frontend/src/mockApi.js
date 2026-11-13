@@ -15,10 +15,19 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 export async function mockAnalyze(text) {
   await wait(1000);
   const selected = taxonomy.filter(item => item.tests.some(re => re.test(text)));
-  const matches = selected.length ? selected : [{key:'Услуга из описания', category:'Услуги', microcategory:'Другая услуга', title:'Услуги по вашему запросу', description:'Оказываю услуги, указанные в описании. Подробности можно обсудить индивидуально.'}];
-  return matches.map((item, i) => ({ id: crypto.randomUUID(), service: item.key, category: item.category, microcategory: item.microcategory, confidence: selected.length ? (i < 3 ? 'high' : 'medium') : 'low', title: item.title, description: item.description, selected: true }));
+  const fragments = text.split(/(?<=[.!?])\s+|\n+/).filter(Boolean).flatMap(sentence => sentence.split(/[,;]|\s+и\s+/i));
+  return selected.map((item, i) => ({
+    id: crypto.randomUUID(),
+    service: item.key,
+    category: item.category,
+    microcategory: item.microcategory,
+    sourceFragment: fragments.find(fragment => item.tests.some(re => re.test(fragment)))?.trim() || text,
+    confidence: i < 3 ? 'high' : 'medium',
+    title: item.title,
+    selected: true,
+  }));
 }
 export async function mockGenerate(services) {
   await wait(750);
-  return services.map(s => ({ id: crypto.randomUUID(), service: s.service, category: s.category, microcategory: s.microcategory, title: s.title || s.service, description: s.description || `Выполняю работы: ${s.service.toLowerCase()}. Детали обсуждаются индивидуально.`, status:'Черновик', createdAt: new Date().toISOString() }));
+  return services.map(s => ({ id: crypto.randomUUID(), service: s.service, category: s.category, microcategory: s.microcategory, title: s.title || s.service, description: s.sourceFragment ? `${s.sourceFragment}\n\nДополните объявление деталями, которые готовы указать.` : 'Добавьте описание услуги и её условия перед публикацией.', status:'Черновик', createdAt: new Date().toISOString() }));
 }
