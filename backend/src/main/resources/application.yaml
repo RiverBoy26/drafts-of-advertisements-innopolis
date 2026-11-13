@@ -1,3 +1,41 @@
+
 spring:
   application:
     name: backend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/avito
+    username: postgres
+    password: admin
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+  jackson:
+    default-property-inclusion: non_null
+
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
+
+server:
+  port: 8080
+  error:
+    include-message: never
+
+app:
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000}
+
+jwt:
+  secret: ${JWT_SECRET}
+  issuer: avito-monolith
+  access-token-ttl: 15m
+  refresh-token-ttl: 7d
