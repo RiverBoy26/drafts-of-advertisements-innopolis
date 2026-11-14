@@ -23,12 +23,36 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
-      ML_BASE_URL: ${ML_BASE_URL:-http://host.docker.internal:8000}
+      ML_BASE_URL: http://ai-service:8001
+      ML_INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN}
+      ML_READ_TIMEOUT: ${ML_READ_TIMEOUT:-120s}
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
+      ai-service:
+        condition: service_started
+    restart: unless-stopped
+
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    environment:
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN}
+      CLASSIFIER_MODE: ${CLASSIFIER_MODE:-cpu}
+      LOCAL_CLASSIFIER_BACKEND: ${LOCAL_CLASSIFIER_BACKEND:-rubert}
+      RUBERT_MODEL_PATH: /service/artifacts/rubert_base
+      GENERATOR_PROVIDER: ${GENERATOR_PROVIDER:-disabled}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_TIMEOUT_SECONDS: ${DEEPSEEK_TIMEOUT_SECONDS:-12}
+      DEEPSEEK_MAX_RETRIES: ${DEEPSEEK_MAX_RETRIES:-1}
+      CLAIM_VERIFIER_ENABLED: ${CLAIM_VERIFIER_ENABLED:-false}
+      MAX_DESCRIPTION_CHARS: 10000
+      CPU_MODEL_PATH: /service/artifacts/cpu_char.joblib
+    volumes:
+      - ./ai-service/artifacts:/service/artifacts:ro
     restart: unless-stopped
 
   postgres:

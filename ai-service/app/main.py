@@ -36,8 +36,8 @@ class Input(BaseModel):
 class Draft(BaseModel):
     model_config=ConfigDict(extra="forbid")
     mcId:int=Field(strict=True)
-    title:str|None
-    text:str|None
+    title:str|None=Field(max_length=255)
+    text:str|None=Field(max_length=10000)
     @field_validator("mcId")
     @classmethod
     def valid_target(cls,v):
@@ -221,6 +221,7 @@ async def deepseek(messages):
 def valid_text(description, generated, mc=None):
     title,text=generated.get("title"),generated.get("text")
     if not isinstance(title,str) or not isinstance(text,str) or not title.strip() or not text.strip():return None,None
+    if len(title.strip())>255 or len(text.strip())>10000:return None,None
     target_evidence=" ".join(x["text"] for x in evidence(description,mc)) if mc is not None else description
     src=latin(norm(target_evidence)); out=latin(norm(title+" "+text))
     claim_patterns=(r"garant\w*",r"skidk\w*",r"opyt\w*\s+\d+",r"\d+\s+let\s+opyt\w*",r"vyezd\w*",r"zakaz\w*.*otdel\w*",r"mozhno\s+.*otdel\w*",r"cena\s+ot\s+\d+",r"stoimost\s+ot\s+\d+",r"litsenzi\w*",r"rabot\w*\s+(?:v|po)\s+\w+",r"srok\w*",r"\d+\s+(?:dney|nedel\w*|mesyac\w*)",r"segodnya|zavtra")

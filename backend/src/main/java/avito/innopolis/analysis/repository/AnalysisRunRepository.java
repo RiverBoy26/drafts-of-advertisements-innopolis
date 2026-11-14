@@ -9,6 +9,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface AnalysisRunRepository extends JpaRepository<AnalysisRun,UUID> {
+    @Override
+    @EntityGraph(attributePaths={"sourceAd", "sourceAd.originalMc"})
+    Optional<AnalysisRun> findById(UUID id);
+
     @EntityGraph(attributePaths={"sourceAd"})
     Optional<AnalysisRun> findByIdAndSourceAd_User_Id(UUID id,UUID userId);
     @EntityGraph(attributePaths={"sourceAd"})
