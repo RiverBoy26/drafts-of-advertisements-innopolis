@@ -1,0 +1,7 @@
+# Выбор модели
+
+Для локального пути выбрана TF-IDF char (3–5 грамм), One-vs-Rest Logistic Regression. Порог 0.45 выбран на validation после формирования near-duplicate connected components при cosine ≥0.95. На слабой автоматической разметке char-only показал micro-F1 0.9342 / precision 0.9252 / recall 0.9434. На этой split комбинация word+char показала 0.9319, word-only — 0.9094. Exact-only split ранее дал более высокий combined micro-F1 0.9422, но near-duplicate audit обнаружил cross-split сходство, поэтому он не используется для выбора модели.
+
+Финальный артефакт сохраняет явный mapping `[102,103,104,105,106]` и ожидает только description. Его можно пересобрать `python scripts/train_cpu.py`; inference использует тот же `normalize(description)`. Размер близких компонентов и cross-split similarity описаны в `EXPERIMENT_RESULTS.md`. Публичный набор оценён отдельно; порог из него не выбирался, но дубликаты и пересечения делают его не blind.
+
+Переключатели: `CLASSIFIER_MODE=cpu|deepseek|hybrid`. `cpu` — обязательный офлайн путь. `deepseek` выбирает только из шести ID по закрытому промпту; `hybrid` отправляет в DeepSeek только неуверенные CPU результаты и при ошибке сохраняет CPU ответ. Отдельно оценить качество этих режимов можно лишь после включённого live теста с ключом; DeepSeek/hybrid как победители не заявляются. Черновики генерирует `deepseek-flash`; без ключа классифицированные ID остаются в ответе с `title/text=null`.
