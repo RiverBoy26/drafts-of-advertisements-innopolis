@@ -4,50 +4,22 @@ import {
   listDrafts, login, logout, refresh, register, updateDraft,
 } from './api';
 import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  CircleHelp,
-  Copy,
-  FileCheck2,
-  FileText,
-  Grid3X3,
-  House,
-  LogOut,
-  Menu,
-  Paintbrush,
-  PaintRoller,
-  Pencil,
-  Plus,
-  Search,
-  ShieldCheck,
-  Sparkles,
-  Trash2,
-  Wrench,
-  X,
-  AlertCircle,
-  LoaderCircle,
-  Eye,
-  EyeOff,
-  PanelLeftClose,
-  UserRound,
-  Zap,
-  SlidersHorizontal,
-  Clock3,
+  ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, ChevronRight,
+  CircleHelp, Copy, FileCheck2, FilePenLine, FileText, Grid3X3, House,
+  LogOut, Menu, Paintbrush, PaintRoller, Pencil, Plus, Search, ShieldCheck,
+  Sparkles, Trash2, Wrench, X, AlertCircle, LoaderCircle, Eye, EyeOff,
+  PanelLeftClose, UserRound, Zap, SlidersHorizontal, Clock3,
 } from 'lucide-react';
 
 const SESSION_STORAGE = 'draftly-session-v1';
 
-function safeRead(key) {
+const safeRead = key => {
   try {
     return JSON.parse(localStorage.getItem(key)) || {};
   } catch {
     return {};
   }
-}
+};
 
 const categoryFor = (mcId, categories) =>
   categories.find(c => c.mcId === Number(mcId));
@@ -61,7 +33,6 @@ const icons = {
   106: Paintbrush,
 };
 
-// Логотип
 function Logo({ small = false }) {
   return (
     <span className={`brand ${small ? 'brand-small' : ''}`}>
@@ -70,7 +41,6 @@ function Logo({ small = false }) {
   );
 }
 
-// Общая кнопка
 function Button({
   children,
   variant = 'secondary',
@@ -87,7 +57,6 @@ function Button({
   );
 }
 
-// Поле ввода
 function Field({ label, ...props }) {
   return (
     <label className="field">
@@ -164,10 +133,10 @@ function AuthPage({ onLogin, connectionError }) {
 
           <div className="auth-heading">
             <h1>
-              {mode === 'login' ? 'Вход в Draftly' : 'Регистрация'}
+              {mode === 'login'
+                ? 'Вход в Draftly'
+                : 'Регистрация'}
             </h1>
-
-            <p>Ваши объявления — в одном месте</p>
           </div>
 
           <form onSubmit={submit}>
@@ -256,14 +225,18 @@ function AuthPage({ onLogin, connectionError }) {
           </form>
 
           <p className="auth-switch">
-            {mode === 'login' ? 'Нет аккаунта?' : 'Уже есть аккаунт?'}{' '}
+            {mode === 'login'
+              ? 'Нет аккаунта?'
+              : 'Уже есть аккаунт?'}{' '}
 
             <button
               type="button"
               className="text-link"
               onClick={switchMode}
             >
-              {mode === 'login' ? 'Зарегистрироваться' : 'Войти'}
+              {mode === 'login'
+                ? 'Зарегистрироваться'
+                : 'Войти'}
             </button>
           </p>
         </section>
@@ -291,6 +264,12 @@ function AppHeader({
 }) {
   const [drawer, setDrawer] = useState(false);
   const [profile, setProfile] = useState(false);
+
+  const accountName =
+    [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+    user.name ||
+    user.email ||
+    'Пользователь';
 
   useEffect(() => {
     const close = e => {
@@ -331,14 +310,6 @@ function AppHeader({
         </div>
 
         <div className="topbar-right">
-          <button
-            className="topbar-create"
-            onClick={() => navigate('overview')}
-          >
-            <Plus size={17} />
-            Новое объявление
-          </button>
-
           <div className="profile-wrap">
             <button
               className="profile-trigger"
@@ -349,13 +320,16 @@ function AppHeader({
                 <UserRound size={18} />
               </span>
 
-              <span>Аккаунт</span>
+              <span className="profile-name">
+                {accountName}
+              </span>
+
               <ChevronDown size={16} />
             </button>
 
             {profile && (
               <div className="profile-menu">
-                <strong>{user.name}</strong>
+                <strong>{accountName}</strong>
                 <small>{user.email}</small>
 
                 <button
@@ -412,8 +386,12 @@ function AppHeader({
                 <button
                   key={id}
                   onClick={() => navigate(id)}
-                  className={`nav-item ${page === id ? 'active' : ''}`}
-                  aria-current={page === id ? 'page' : undefined}
+                  className={`nav-item ${
+                    page === id ? 'active' : ''
+                  }`}
+                  aria-current={
+                    page === id ? 'page' : undefined
+                  }
                 >
                   <Icon size={20} />
                   <span>{label}</span>
@@ -440,7 +418,7 @@ function AppHeader({
   );
 }
 
-// Иконки микрокатегорий
+// Иконки категорий
 function CategoryIcon({ mcId, size = 25 }) {
   const Icon = icons[mcId] || Wrench;
 
@@ -461,13 +439,6 @@ function OverviewPage({
   return (
     <>
       <div className="page-heading">
-        <p className="breadcrumb">
-          Главная
-          <ChevronRight size={14} />
-          Услуги
-          <ChevronRight size={14} />
-          Ремонт и отделка
-        </p>
 
         <h1>Создать объявление</h1>
       </div>
@@ -604,7 +575,7 @@ function OverviewPage({
   );
 }
 
-// Страница результатов
+// Результаты анализа
 function AnalysisPage({
   categories,
   result,
@@ -618,7 +589,6 @@ function AnalysisPage({
     return (
       <div className="empty-page">
         <Sparkles size={32} />
-
         <h1>Анализ пока не выполнялся</h1>
 
         <p>
@@ -638,19 +608,10 @@ function AnalysisPage({
   return (
     <>
       <div className="page-heading">
-        <p className="breadcrumb">
-          <button onClick={onBack}>Обзор</button>
-          <ChevronRight size={14} />
-          Результаты анализа
-        </p>
 
         <div className="heading-with-action">
           <div>
             <h1>Результаты анализа</h1>
-
-            <p>
-              Проверьте предложения и сохраните подходящие черновики.
-            </p>
           </div>
 
           <Button onClick={onNew}>
@@ -704,10 +665,7 @@ function AnalysisPage({
                 key={draft.mcId}
               >
                 <div className="proposal-icon">
-                  <CategoryIcon
-                    mcId={draft.mcId}
-                    size={28}
-                  />
+                  <CategoryIcon mcId={draft.mcId} size={28} />
                 </div>
 
                 <div className="proposal-body">
@@ -717,23 +675,21 @@ function AnalysisPage({
 
                   <h3>{category?.name}</h3>
 
-                  {draft.title || draft.text ? (
+                  {(draft.title || draft.text) && (
                     <div className="suggestion-preview">
                       <strong>
-                        {draft.title || 'Без заголовка'}
+                        {draft.title || category?.name}
                       </strong>
-
-                      <p>
-                        {draft.text ||
-                          'Текст необходимо заполнить вручную.'}
-                      </p>
+                      <p>{draft.text || ''}</p>
                     </div>
-                  ) : (
-                    <p className="suggestion-unfilled">
-                      Заголовок и описание можно добавить в черновике.
-                    </p>
                   )}
 
+                  {result.evidence?.[draft.mcId] && (
+                    <p className="evidence">
+                      В исходном тексте:
+                      «{result.evidence[draft.mcId]}»
+                    </p>
+                  )}
                 </div>
 
                 <div className="proposal-actions">
@@ -800,10 +756,8 @@ function CollectionPage({
           .toLowerCase()
           .includes(query.toLowerCase());
 
-        return matchSearch && (
-          category === 'all' ||
-          Number(category) === item.mcId
-        );
+        return matchSearch &&
+          (category === 'all' || Number(category) === item.mcId);
       })
       .sort((a, b) => {
         const aa = new Date(
@@ -823,49 +777,10 @@ function CollectionPage({
   return (
     <>
       <div className="page-heading">
-        <p className="breadcrumb">
-          Моё пространство
-          <ChevronRight size={14} />
+
+        <h1>
           {isAds ? 'Мои объявления' : 'Черновики'}
-        </p>
-
-        <div className="heading-with-action">
-          <div>
-            <h1>
-              {isAds ? 'Мои объявления' : 'Черновики'}
-            </h1>
-
-            <p>
-              {isAds
-                ? 'Подготовленные объявления, которые можно скопировать для публикации.'
-                : 'Сохранённые варианты — проверьте и отредактируйте перед использованием.'}
-            </p>
-          </div>
-
-          <Button
-            variant="primary"
-            onClick={() => onNavigate('overview')}
-          >
-            <Plus size={17} />
-            Создать объявление
-          </Button>
-        </div>
-      </div>
-
-      <div className="collection-tabs">
-        <button
-          className={!isAds ? 'active' : ''}
-          onClick={() => onNavigate('drafts')}
-        >
-          Черновики <span>{draftsCount}</span>
-        </button>
-
-        <button
-          className={isAds ? 'active' : ''}
-          onClick={() => onNavigate('ads')}
-        >
-          Мои объявления <span>{adsCount}</span>
-        </button>
+        </h1>
       </div>
 
       <div className="collection-toolbar">
@@ -897,9 +812,7 @@ function CollectionPage({
             aria-label="Категория"
             onChange={e => setCategory(e.target.value)}
           >
-            <option value="all">
-              Все категории
-            </option>
+            <option value="all">Все категории</option>
 
             {categories.map(cat => (
               <option
@@ -966,10 +879,7 @@ function CollectionPage({
       ) : (
         <div className="collection-list">
           {filtered.map(item => (
-            <article
-              className="listing"
-              key={item.id}
-            >
+            <article className="listing" key={item.id}>
               <div className="listing-body">
                 <div className="listing-caption">
                   <span
@@ -1095,7 +1005,7 @@ function EditModal({ item, categories, onClose, onSave }) {
         <div className="modal-head">
           <div>
             <h2 id="edit-title">
-              Редактирование черновика
+              Редактирование объявления
             </h2>
 
             <p>
