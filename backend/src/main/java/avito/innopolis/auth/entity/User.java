@@ -5,7 +5,6 @@ import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -27,9 +26,6 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable = false, unique = true, length = 12)
-    private String phone;
-
     @Column(nullable = false)
     private String passwordHash;
 
@@ -40,9 +36,4 @@ public class User {
     @CreationTimestamp
     private LocalDateTime createdAt;
 
-    @Column(name = "middle_name")
-    private String middleName;
-
-    @Column(name = "birth_date", nullable = false)
-    private LocalDate birthDate;
 }

@@ -23,6 +23,13 @@ public class AnalysisController {
         this.analysisService = analysisService;
     }
 
+    @PostMapping("/analyses")
+    public ResponseEntity<Map<String, Object>> start(@Valid @RequestBody CreateAnalysisRequest request) {
+        AnalysisRun run = analysisService.start(request);
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(Map.of("id", run.id, "status", run.status));
+    }
+
     @PostMapping("/source-ads")
     public ResponseEntity<AdView> create(@Valid @RequestBody CreateSourceAdRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -45,8 +52,8 @@ public class AnalysisController {
     }
 
     @GetMapping("/analyses/{id}")
-    public RunView run(@PathVariable UUID id) {
-        return toRunView(analysisService.requireRun(id));
+    public AnalysisResultView run(@PathVariable UUID id) {
+        return analysisService.result(id);
     }
 
     @GetMapping("/analyses/{id}/services")

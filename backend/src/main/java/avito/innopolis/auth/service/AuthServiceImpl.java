@@ -46,27 +46,16 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse register(RegisterRequest request) {
 
         String email = normalizeEmail(request.email());
-        String phone = request.phone().trim();
 
         if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new FieldConflictException("email", "Этот email уже зарегистрирован");
-        }
-        if (userRepository.existsByPhone(phone)) {
-            throw new FieldConflictException("phone", "Этот номер телефона уже зарегистрирован");
         }
 
         User user = new User();
 
         user.setFirstName(request.firstName().trim());
         user.setLastName(request.lastName().trim());
-        user.setMiddleName(
-                request.middleName() == null || request.middleName().isBlank()
-                        ? null
-                        : request.middleName().trim()
-        );
-        user.setBirthDate(request.birthDate());
         user.setEmail(email);
-        user.setPhone(phone);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
         user.setRole(Role.USER);
 
@@ -74,7 +63,7 @@ public class AuthServiceImpl implements AuthService {
             userRepository.saveAndFlush(user);
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Email или номер телефона уже зарегистрированы", ex);
+                    "Email уже зарегистрирован", ex);
         }
 
         return createTokenPair(user);
@@ -210,29 +199,17 @@ public class AuthServiceImpl implements AuthService {
             throw new FieldConflictException("email", "Этот email уже используется");
         }
 
-        String phone = request.phone().trim();
-        if (userRepository.existsByPhoneAndIdNot(phone, userId)) {
-            throw new FieldConflictException("phone", "Этот номер телефона уже используется");
-        }
 
         user.setFirstName(request.firstName().trim());
         user.setLastName(request.lastName().trim());
-        user.setMiddleName(
-                request.middleName() == null
-                        || request.middleName().isBlank()
-                        ? null
-                        : request.middleName().trim()
-        );
-        user.setBirthDate(request.birthDate());
         user.setEmail(email);
-        user.setPhone(phone);
 
         try {
             return UserResponse.from(userRepository.saveAndFlush(user));
         } catch (DataIntegrityViolationException ex) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
-                    "Email или номер телефона уже используются",
+                    "Email уже используется",
                     ex
             );
         }
