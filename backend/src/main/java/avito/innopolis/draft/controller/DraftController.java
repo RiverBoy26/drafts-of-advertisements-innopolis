@@ -2,10 +2,12 @@ package avito.innopolis.draft.controller;
 
 import avito.innopolis.draft.dto.DraftItem;
 import avito.innopolis.draft.dto.DraftPatch;
+import avito.innopolis.draft.dto.DraftStatePatch;
 import avito.innopolis.draft.dto.DraftView;
 import avito.innopolis.draft.entity.Draft;
 import avito.innopolis.draft.service.DraftService;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -27,6 +29,11 @@ public class DraftController {
         return Map.of("items", draftService.forRun(id).stream().map(this::toView).toList());
     }
 
+    @GetMapping("/drafts")
+    public Map<String, List<DraftView>> listAll(@RequestParam(required = false) String state) {
+        return Map.of("items", draftService.list(state).stream().map(this::toView).toList());
+    }
+
     @GetMapping("/analyses/{id}/result")
     public Map<String, List<DraftItem>> result(@PathVariable UUID id) {
         List<DraftItem> drafts = draftService.forRun(id).stream()
@@ -45,9 +52,20 @@ public class DraftController {
         return toView(draftService.update(id, patch));
     }
 
+    @PatchMapping("/drafts/{id}/state")
+    public DraftView changeState(@PathVariable UUID id, @Valid @RequestBody DraftStatePatch patch) {
+        return toView(draftService.changeState(id, patch));
+    }
+
+    @DeleteMapping("/drafts/{id}")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        draftService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
     private DraftView toView(Draft draft) {
         return new DraftView(
-                draft.id, draft.targetMc.mcId,
-                draft.title, draft.body, draft.status);
+                draft.id, draft.analysis.id, draft.analysis.sourceAd.id, draft.targetMc.mcId,
+                draft.title, draft.body, draft.status, draft.collectionState, draft.createdAt, draft.updatedAt);
     }
 }

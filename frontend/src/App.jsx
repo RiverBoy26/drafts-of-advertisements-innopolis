@@ -1,4 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  analyzeText, changeDraftState, deleteDraft, getMicrocategories, getProfile,
+  listDrafts, login, logout, refresh, register, updateDraft,
+} from './api';
 import {
   ArrowLeft,
   ArrowRight,
@@ -35,43 +39,7 @@ import {
   Clock3,
 } from 'lucide-react';
 
-// Справочник микрокатегорий.
-// Идентификаторы используются внутри приложения, но не отображаются на страницах.
-const MICROCATEGORIES = [
-  { mcId: 101, name: 'Ремонт под ключ' },
-  { mcId: 102, name: 'Штукатурные работы' },
-  { mcId: 103, name: 'Плиточные работы' },
-  { mcId: 104, name: 'Сантехника' },
-  { mcId: 105, name: 'Электрика' },
-  { mcId: 106, name: 'Поклейка обоев и малярные работы' },
-];
-
-// Временные данные вместо настоящего анализа backend.
-const MOCK_RESULTS = {
-  101: [104, 105],
-  102: [106],
-  103: [104],
-  104: [101, 105],
-  105: [104],
-  106: [102],
-};
-
-function getMockResults(sourceMcId) {
-  return {
-    drafts: (MOCK_RESULTS[sourceMcId] || [])
-      .filter(targetMcId => targetMcId !== sourceMcId)
-      .map(targetMcId => ({
-        mcId: targetMcId,
-        title: null,
-        text: null,
-      })),
-    demo: true,
-    evidence: {},
-  };
-}
-
-const STORAGE = 'draftly-case-2026-v1';
-const LEGACY_STORAGE = 'draftly-v1';
+const SESSION_STORAGE = 'draftly-session-v1';
 
 function safeRead(key) {
   try {
@@ -81,11 +49,8 @@ function safeRead(key) {
   }
 }
 
-const initial = safeRead(STORAGE);
-const previous = safeRead(LEGACY_STORAGE);
-
-const categoryFor = mcId =>
-  MICROCATEGORIES.find(c => c.mcId === Number(mcId));
+const categoryFor = (mcId, categories) =>
+  categories.find(c => c.mcId === Number(mcId));
 
 const icons = {
   101: House,
@@ -133,7 +98,7 @@ function Field({ label, ...props }) {
 }
 
 // Вход и регистрация
-function AuthPage({ onLogin }) {
+function AuthPage({ onLogin, connectionError }) {
   const [mode, setMode] = useState('login');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -142,8 +107,9 @@ function AuthPage({ onLogin }) {
   const [repeat, setRepeat] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const submit = e => {
+  const submit = async e => {
     e.preventDefault();
     setError('');
 
@@ -159,22 +125,26 @@ function AuthPage({ onLogin }) {
       return setError('Укажите корректную почту.');
     }
 
-    if (password.length < 6) {
-      return setError('Пароль должен содержать минимум 6 символов.');
+    if (mode === 'register' && password.length < 8) {
+      return setError('Пароль должен содержать минимум 8 символов.');
     }
 
     if (mode === 'register' && password !== repeat) {
       return setError('Пароли не совпадают.');
     }
 
-    onLogin({
-      firstName: mode === 'register' ? firstName.trim() : '',
-      lastName: mode === 'register' ? lastName.trim() : '',
-      name: mode === 'register'
-        ? `${firstName.trim()} ${lastName.trim()}`
-        : email.split('@')[0],
-      email,
-    });
+    setLoading(true);
+    try {
+      await onLogin(mode, {
+        ...(mode === 'register' ? { firstName: firstName.trim(), lastName: lastName.trim() } : {}),
+        email: email.trim(),
+        password,
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const switchMode = () => {
@@ -244,7 +214,7 @@ function AuthPage({ onLogin }) {
                 }
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="Не менее 6 символов"
+                placeholder="Не менее 8 символов"
                 required
               />
 
@@ -273,15 +243,15 @@ function AuthPage({ onLogin }) {
               />
             )}
 
-            {error && (
+          {(error || connectionError) && (
               <p className="form-error" role="alert">
                 <AlertCircle size={16} />
-                {error}
+                {error || connectionError}
               </p>
             )}
 
-            <Button variant="primary" type="submit">
-              {mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+            <Button variant="primary" type="submit" disabled={loading}>
+              {loading ? 'Подождите...' : mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
             </Button>
           </form>
 
@@ -479,6 +449,7 @@ function CategoryIcon({ mcId, size = 25 }) {
 
 // Обзор
 function OverviewPage({
+  categories,
   mcId,
   onMcId,
   description,
@@ -508,7 +479,7 @@ function OverviewPage({
         >
           <div className="section-top">
             <h2 id="categories-heading">1. Выберите категорию</h2>
-            <span>6 вариантов</span>
+            <span>{categories.length} вариантов</span>
           </div>
 
           <p className="section-help">
@@ -520,7 +491,7 @@ function OverviewPage({
             role="radiogroup"
             aria-label="Исходная микрокатегория"
           >
-            {MICROCATEGORIES.map(category => (
+            {categories.map(category => (
               <button
                 key={category.mcId}
                 type="button"
@@ -572,7 +543,7 @@ function OverviewPage({
 
               <span>
                 Основная категория:{' '}
-                <strong>{categoryFor(mcId)?.name}</strong>
+                <strong>{categoryFor(mcId, categories)?.name}</strong>
               </span>
             </div>
           ) : (
@@ -635,6 +606,7 @@ function OverviewPage({
 
 // Страница результатов
 function AnalysisPage({
+  categories,
   result,
   onBack,
   onSave,
@@ -660,7 +632,7 @@ function AnalysisPage({
     );
   }
 
-  const source = categoryFor(result.mcId);
+  const source = categoryFor(result.mcId, categories);
   const proposals = result.drafts;
 
   return (
@@ -722,7 +694,7 @@ function AnalysisPage({
       ) : (
         <div className="proposal-list">
           {proposals.map(draft => {
-            const category = categoryFor(draft.mcId);
+            const category = categoryFor(draft.mcId, categories);
             const status = proposalStatuses.get(draft.mcId);
             const saved = Boolean(status);
 
@@ -762,11 +734,6 @@ function AnalysisPage({
                     </p>
                   )}
 
-                  {result.evidence?.[draft.mcId] && (
-                    <p className="evidence">
-                      В исходном тексте: «{result.evidence[draft.mcId]}»
-                    </p>
-                  )}
                 </div>
 
                 <div className="proposal-actions">
@@ -807,6 +774,7 @@ function AnalysisPage({
 
 // Черновики и мои объявления
 function CollectionPage({
+  categories,
   section,
   items,
   onNavigate,
@@ -827,7 +795,7 @@ function CollectionPage({
         const matchSearch = `
           ${item.title || ''}
           ${item.text || ''}
-          ${categoryFor(item.mcId)?.name || ''}
+          ${categoryFor(item.mcId, categories)?.name || ''}
         `
           .toLowerCase()
           .includes(query.toLowerCase());
@@ -848,7 +816,7 @@ function CollectionPage({
 
         return sort === 'newest' ? bb - aa : aa - bb;
       });
-  }, [items, query, category, sort]);
+  }, [items, query, category, sort, categories]);
 
   const isAds = section === 'ads';
 
@@ -933,7 +901,7 @@ function CollectionPage({
               Все категории
             </option>
 
-            {MICROCATEGORIES.map(cat => (
+            {categories.map(cat => (
               <option
                 key={cat.mcId}
                 value={cat.mcId}
@@ -1025,13 +993,13 @@ function CollectionPage({
 
                 <h3>
                   {item.title ||
-                    categoryFor(item.mcId)?.name ||
+                    categoryFor(item.mcId, categories)?.name ||
                     'Без названия'}
                 </h3>
 
                 <p className="listing-micro">
                   Услуги · Ремонт и отделка ·{' '}
-                  {categoryFor(item.mcId)?.name}
+                  {categoryFor(item.mcId, categories)?.name}
                 </p>
 
                 <p className="listing-text">
@@ -1080,7 +1048,7 @@ function CollectionPage({
 }
 
 // Редактирование объявления
-function EditModal({ item, onClose, onSave }) {
+function EditModal({ item, categories, onClose, onSave }) {
   const [title, setTitle] = useState(item.title || '');
   const [text, setText] = useState(item.text || '');
   const [error, setError] = useState('');
@@ -1131,7 +1099,7 @@ function EditModal({ item, onClose, onSave }) {
             </h2>
 
             <p>
-              {categoryFor(item.mcId)?.name}
+              {categoryFor(item.mcId, categories)?.name}
             </p>
           </div>
 
@@ -1189,48 +1157,68 @@ function EditModal({ item, onClose, onSave }) {
 
 // Основное приложение
 function App() {
-  const [user, setUser] = useState(
-    initial.user !== undefined
-      ? initial.user
-      : previous.user || null
-  );
-
+  const [session, setSession] = useState(() => safeRead(SESSION_STORAGE));
+  const sessionRef = useRef(session);
+  const user = session?.user || null;
+  const [categories, setCategories] = useState([]);
   const [page, setPage] = useState('overview');
-  const [mcId, setMcId] = useState(initial.mcId || null);
-  const [description, setDescription] = useState(
-    initial.description || ''
-  );
-
-  const [result, setResult] = useState(
-    initial.result || null
-  );
-
-  const [drafts, setDrafts] = useState(
-    initial.drafts || []
-  );
-
-  const [ads, setAds] = useState(
-    initial.ads || []
-  );
-
+  const [mcId, setMcId] = useState(null);
+  const [description, setDescription] = useState('');
+  const [result, setResult] = useState(null);
+  const [drafts, setDrafts] = useState([]);
+  const [ads, setAds] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [editItem, setEditItem] = useState(null);
 
-  // Временное сохранение данных в браузере
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE,
-      JSON.stringify({
-        user,
-        mcId,
-        description,
-        result,
-        drafts,
-        ads,
-      })
-    );
-  }, [user, mcId, description, result, drafts, ads]);
+    sessionRef.current = session;
+    if (session?.accessToken) {
+      localStorage.setItem(SESSION_STORAGE, JSON.stringify(session));
+    } else {
+      localStorage.removeItem(SESSION_STORAGE);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    getMicrocategories().then(setCategories).catch(err => setError(err.message));
+  }, []);
+
+  useEffect(() => {
+    if (!session?.accessToken) return;
+    let active = true;
+    Promise.all([
+      getProfile(session.accessToken),
+      listDrafts('draft', session.accessToken),
+      listDrafts('ready', session.accessToken),
+    ]).then(([profile, savedDrafts, savedAds]) => {
+      if (!active) return;
+      setSession(current => ({ ...current, user: profile }));
+      setDrafts(savedDrafts);
+      setAds(savedAds);
+    }).catch(async err => {
+      if (!active) return;
+      if (err.status === 401 && session.refreshToken) {
+        try {
+          const renewed = await refresh(session.refreshToken);
+          if (active) {
+            sessionRef.current = renewed;
+            setSession(renewed);
+          }
+          return;
+        } catch (refreshError) {
+          if (active) setError(refreshError.message);
+        }
+      } else {
+        setError(err.message);
+        if (err.status !== 401) return;
+      }
+      sessionRef.current = null;
+      setSession(null);
+    });
+    return () => { active = false; };
+  }, [session?.accessToken]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -1251,144 +1239,101 @@ function App() {
     });
   };
 
-  // Заглушка до подключения backend
-  const onAnalyze = () => {
+  const authorized = async action => {
+    const current = sessionRef.current;
+    try {
+      return await action(current.accessToken);
+    } catch (err) {
+      if (err.status !== 401 || !current.refreshToken) throw err;
+      const renewed = await refresh(current.refreshToken);
+      sessionRef.current = renewed;
+      setSession(renewed);
+      return action(renewed.accessToken);
+    }
+  };
+
+  const loadCollections = async () => {
+    const [savedDrafts, savedAds] = await authorized(token => Promise.all([
+      listDrafts('draft', token), listDrafts('ready', token),
+    ]));
+    setDrafts(savedDrafts);
+    setAds(savedAds);
+  };
+
+  const onAuth = async (mode, credentials) => {
+    const response = mode === 'register' ? await register(credentials) : await login(credentials);
+    sessionRef.current = response;
+    setSession(response);
     setError('');
-
-    if (!categoryFor(mcId)) {
-      setError('Выберите исходную микрокатегорию.');
-      return;
-    }
-
-    if (description.trim().length < 12) {
-      setError('Введите описание не короче 12 символов.');
-      return;
-    }
-
-    const response = getMockResults(mcId);
-
-    setResult({
-      ...response,
-      mcId,
-      description,
-      date: new Date().toISOString(),
-    });
-
-    go('analysis');
+    go('overview');
   };
 
-  const saveProposal = proposal => {
-    if (
-      !result ||
-      proposal.mcId === result.mcId ||
-      !categoryFor(proposal.mcId)
-    ) {
-      return;
+  const onAnalyze = async () => {
+    setError('');
+    if (!categoryFor(mcId, categories)) return setError('Выберите исходную микрокатегорию.');
+    if (description.trim().length < 12) return setError('Введите описание не короче 12 символов.');
+    setLoading(true);
+    try {
+      const analysis = await authorized(token => analyzeText(description.trim(), mcId, token));
+      setResult(analysis);
+      go('analysis');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-
-    if (
-      drafts.some(
-        d =>
-          d.sourceId === result.date &&
-          d.mcId === proposal.mcId
-      ) ||
-      ads.some(
-        d =>
-          d.sourceId === result.date &&
-          d.mcId === proposal.mcId
-      )
-    ) {
-      return;
-    }
-
-    const record = {
-      id: crypto.randomUUID(),
-      sourceId: result.date,
-      mcId: proposal.mcId,
-      sourceMcId: result.mcId,
-      title: proposal.title || '',
-      text: proposal.text || '',
-      createdAt: new Date().toISOString(),
-    };
-
-    setDrafts(prev => [record, ...prev]);
-
-    notify(
-      'Черновик сохранён. Проверьте и при необходимости заполните текст.'
-    );
   };
 
-  const deleteItem = item => {
+  const saveProposal = async proposal => {
+    try {
+      const updated = await authorized(token => changeDraftState(proposal.id, 'draft', token));
+      setResult(prev => ({ ...prev, drafts: prev.drafts.map(item => item.id === updated.id ? updated : item) }));
+      await loadCollections();
+      notify('Черновик сохранён. Проверьте и при необходимости заполните текст.');
+    } catch (err) {
+      notify(err.message);
+    }
+  };
+
+  const deleteItem = async item => {
     if (!window.confirm('Удалить объявление?')) return;
-
-    setDrafts(prev =>
-      prev.filter(d => d.id !== item.id)
-    );
-
-    setAds(prev =>
-      prev.filter(d => d.id !== item.id)
-    );
-
-    notify('Объявление удалено');
-  };
-
-  const moveItem = (item, from) => {
-    if (from === 'drafts') {
-      if (!item.title?.trim() || !item.text?.trim()) {
-        setEditItem(item);
-
-        notify(
-          'Для переноса заполните заголовок и описание.'
-        );
-
-        return;
-      }
-
-      setDrafts(prev =>
-        prev.filter(d => d.id !== item.id)
-      );
-
-      setAds(prev => [
-        {
-          ...item,
-          updatedAt: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
-
-      notify('Добавлено в «Мои объявления»');
-    } else {
-      setAds(prev =>
-        prev.filter(d => d.id !== item.id)
-      );
-
-      setDrafts(prev => [
-        {
-          ...item,
-          updatedAt: new Date().toISOString(),
-        },
-        ...prev,
-      ]);
-
-      notify('Перенесено в черновики');
+    try {
+      await authorized(token => deleteDraft(item.id, token));
+      setResult(prev => prev ? { ...prev, drafts: prev.drafts.filter(d => d.id !== item.id) } : prev);
+      await loadCollections();
+      notify('Объявление удалено');
+    } catch (err) {
+      notify(err.message);
     }
   };
 
-  const saveEdit = item => {
-    setDrafts(prev =>
-      prev.map(d =>
-        d.id === item.id ? item : d
-      )
-    );
+  const moveItem = async (item, from) => {
+    if (from === 'drafts' && (!item.title?.trim() || !item.text?.trim())) {
+      setEditItem(item);
+      notify('Для переноса заполните заголовок и описание.');
+      return;
+    }
+    try {
+      const state = from === 'drafts' ? 'ready' : 'draft';
+      const updated = await authorized(token => changeDraftState(item.id, state, token));
+      setResult(prev => prev ? { ...prev, drafts: prev.drafts.map(d => d.id === item.id ? updated : d) } : prev);
+      await loadCollections();
+      notify(from === 'drafts' ? 'Добавлено в «Мои объявления»' : 'Перенесено в черновики');
+    } catch (err) {
+      notify(err.message);
+    }
+  };
 
-    setAds(prev =>
-      prev.map(d =>
-        d.id === item.id ? item : d
-      )
-    );
-
-    setEditItem(null);
-    notify('Изменения сохранены');
+  const saveEdit = async item => {
+    try {
+      const updated = await authorized(token => updateDraft(item, token));
+      setResult(prev => prev ? { ...prev, drafts: prev.drafts.map(d => d.id === item.id ? updated : d) } : prev);
+      await loadCollections();
+      setEditItem(null);
+      notify('Изменения сохранены');
+    } catch (err) {
+      notify(err.message);
+    }
   };
 
   const copy = async item => {
@@ -1403,41 +1348,34 @@ function App() {
     }
   };
 
-  // Отдельно определяем, где находится каждый черновик
   const proposalStatuses = useMemo(() => {
     const statuses = new Map();
-
-    if (!result) return statuses;
-
-    drafts
-      .filter(item => item.sourceId === result.date)
-      .forEach(item => {
-        statuses.set(item.mcId, 'draft');
-      });
-
-    ads
-      .filter(item => item.sourceId === result.date)
-      .forEach(item => {
-        statuses.set(item.mcId, 'ad');
-      });
-
+    result?.drafts.forEach(item => {
+      if (item.collectionState === 'draft') statuses.set(item.mcId, 'draft');
+      if (item.collectionState === 'ready') statuses.set(item.mcId, 'ad');
+    });
     return statuses;
-  }, [drafts, ads, result]);
+  }, [result]);
 
   if (!user) {
-    return <AuthPage onLogin={setUser} />;
+    return <AuthPage onLogin={onAuth} connectionError={error} />;
   }
 
   return (
     <div className="app-shell">
       <AppHeader
-        user={user}
+        user={{ ...user, name: `${user.firstName} ${user.lastName}`.trim() }}
         page={page}
         go={go}
         draftsCount={drafts.length}
         adsCount={ads.length}
-        onLogout={() => {
-          setUser(null);
+        onLogout={async () => {
+          try { await logout(session.refreshToken); } catch { /* Local sign-out still applies. */ }
+          sessionRef.current = null;
+          setSession(null);
+          setDrafts([]);
+          setAds([]);
+          setResult(null);
           go('overview');
         }}
       />
@@ -1445,18 +1383,20 @@ function App() {
       <main className="main-content">
         {page === 'overview' && (
           <OverviewPage
+            categories={categories}
             mcId={mcId}
             onMcId={setMcId}
             description={description}
             setDescription={setDescription}
             onAnalyze={onAnalyze}
-            loading={false}
+            loading={loading}
             error={error}
           />
         )}
 
         {page === 'analysis' && (
           <AnalysisPage
+            categories={categories}
             result={result}
             onBack={() => go('overview')}
             onNew={() => {
@@ -1473,6 +1413,7 @@ function App() {
 
         {(page === 'drafts' || page === 'ads') && (
           <CollectionPage
+            categories={categories}
             key={page}
             section={page}
             items={page === 'drafts' ? drafts : ads}
@@ -1497,6 +1438,7 @@ function App() {
       {editItem && (
         <EditModal
           item={editItem}
+          categories={categories}
           onClose={() => setEditItem(null)}
           onSave={saveEdit}
         />
