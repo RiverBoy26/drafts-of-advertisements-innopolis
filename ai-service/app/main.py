@@ -64,7 +64,9 @@ _latin=list("abvgdezz iiklm noprstufhccssxyxeua".replace(" ",""))
 _TRANS=str.maketrans({c:_latin[i] for i,c in enumerate(_ru)}|{chr(i):_latin[i-0x410] for i in range(0x410,0x430)}|{chr(0x451):"e",chr(0x401):"e"})
 def latin(s):return s.lower().translate(_TRANS)
 def get_model():
-    p=Path(os.getenv("CPU_MODEL_PATH",str(ROOT/"artifacts/cpu_char.joblib")))
+    default_model=ROOT/"artifacts/cpu_char_noise1024.joblib"
+    if not default_model.exists():default_model=ROOT/"artifacts/cpu_char.joblib"
+    p=Path(os.getenv("CPU_MODEL_PATH",str(default_model)))
     if not p.exists(): return None
     data=joblib.load(p)
     if not isinstance(data,dict) or tuple(data.get("class_ids",()))!=(102,103,104,105,106) or data.get("input_field")!="description":
@@ -86,12 +88,14 @@ if _local_backend in {"rubert","ensemble"}:
         _rubert=RuBertClassifier(_rubert_path)
         if _local_backend=="ensemble":
             if CPU_MODEL is None:raise RuntimeError("CPU_MODEL_UNAVAILABLE_FOR_ENSEMBLE")
-            _classifier=ProbabilityBlend((CPU_MODEL["model"],_rubert),(.5,.5))
-            _threshold=.475
+            _rubert_weight=float(os.getenv("ENSEMBLE_RUBERT_WEIGHT","0.25"))
+            _cpu_weight=float(os.getenv("ENSEMBLE_CPU_WEIGHT","0.75"))
+            _classifier=ProbabilityBlend((CPU_MODEL["model"],_rubert),(_cpu_weight,_rubert_weight))
+            _threshold=float(os.getenv("ENSEMBLE_THRESHOLD","0.525"))
         else:
             _classifier=_rubert
             _threshold=.475
-        MODEL={"model":_classifier,"class_ids":(102,103,104,105,106),"input_field":"description","threshold":_threshold,"version":f"local-{_local_backend}-v1"}
+        MODEL={"model":_classifier,"class_ids":(102,103,104,105,106),"input_field":"description","threshold":_threshold,"version":f"local-{_local_backend}-noise1024-v1"}
         ACTIVE_BACKEND=f"{_local_backend}-{'cuda' if _rubert.device.type=='cuda' else 'cpu'}"
     except Exception as exc:
         if MODEL is None:MODEL_LOAD_ERROR="CLASSIFIER_UNAVAILABLE"

@@ -1,0 +1,63 @@
+{
+  "device": "NVIDIA GeForce RTX 3050; CUDA enabled",
+  "ood_set_size": 128,
+  "ood_set": "8 fixed adversarial/OOD examples + 120 synthetic irrelevant texts (news/topics, explicit service mentions in non-offer context)",
+  "training": "Current RuBERT and blend use original organizer labels; candidate CPU model trained on a copy of 4,854 unique descriptions + 64 all-zero synthetic negatives; source data/labels unchanged.",
+  "threshold_results": {
+    "cpu_clean": {
+      "0.45": {
+        "ood_fpr_any": 0.4375,
+        "mean_labels": 0.4766
+      }
+    },
+    "rubert_original": {
+      "0.45": {
+        "ood_fpr_any": 0.5234,
+        "mean_labels": 0.5625
+      }
+    },
+    "ensemble_original_50_50": {
+      "0.475": {
+        "ood_fpr_any": 0.5234,
+        "mean_labels": 0.5625
+      }
+    },
+    "cpu_noise64": {
+      "0.45": {
+        "ood_fpr_any": 0.0156,
+        "mean_labels": 0.0547
+      }
+    },
+    "ensemble_cpu_noise64_50_50": {
+      "0.475": {
+        "ood_fpr_any": 0.5234,
+        "mean_labels": 0.5625
+      },
+      "0.55": {
+        "ood_fpr_any": 0.0156,
+        "mean_labels": 0.0547
+      }
+    }
+  },
+  "clean_validation": "For clean ensemble, use existing grouped CV reports. The candidate noise64+RuBERT ensemble at threshold 0.55 does not yet have full five-fold clean CV; do not replace production ensemble based on OOD-only test.",
+  "latency_note": "GPU-batched inference time varies with batch size and warmup; individual CPU full classification measured around p50 3.4 ms / p95 6.9 ms previously. Noise augmentation did not materially affect CPU inference throughput.",
+  "full_local_classify_latency_ms": {
+    "original_50_50_ensemble": {
+      "p50": 30.38,
+      "p95": 40.2,
+      "n": 300
+    },
+    "noise64_cpu_50_50_ensemble": {
+      "p50": 30.53,
+      "p95": 40.29,
+      "n": 300
+    },
+    "scope": "full local predict function on warm process; includes normalization, feature/tokenizer inference, thresholding and deterministic negation filter; excludes model loading, HTTP and text generation"
+  },
+  "mixed_input_stability_at_threshold_0.475": {
+    "original_ensemble_preservation": 0.984375,
+    "noise64_cpu_ensemble_preservation": 0.9765625,
+    "n": 128,
+    "note": "perturbation stability only; not a correctness metric"
+  }
+}
