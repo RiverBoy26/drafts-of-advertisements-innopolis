@@ -9,6 +9,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface DraftRepository extends JpaRepository<Draft,UUID> {
-    @EntityGraph(attributePaths={"targetMc"}) List<Draft> findByAnalysis_IdOrderByCreatedAtAsc(UUID runId);
-    @EntityGraph(attributePaths={"targetMc"}) Optional<Draft> findByIdAndAnalysis_SourceAd_User_Id(UUID id, UUID userId);
+    @EntityGraph(attributePaths={"targetMc","analysis.sourceAd"}) List<Draft> findByAnalysis_IdOrderByCreatedAtAsc(UUID runId);
+    @EntityGraph(attributePaths={"targetMc","analysis.sourceAd"}) Optional<Draft> findByIdAndAnalysis_SourceAd_User_Id(UUID id, UUID userId);
+    @EntityGraph(attributePaths={"targetMc","analysis.sourceAd"}) List<Draft> findByAnalysis_SourceAd_User_IdAndCollectionStateOrderByCreatedAtDesc(UUID userId, String collectionState);
+    @EntityGraph(attributePaths={"targetMc","analysis.sourceAd"}) List<Draft> findByAnalysis_SourceAd_User_IdOrderByCreatedAtDesc(UUID userId);
 }

@@ -32,6 +32,9 @@ public class Draft {
     @Column(nullable=false,length=32)
     public String status="generated";
 
+    @Column(name="collection_state",nullable=false,length=32,columnDefinition="varchar(32) default 'suggested'")
+    public String collectionState="suggested";
+
     @CreationTimestamp @Column(nullable=false,updatable=false)
     public OffsetDateTime createdAt;
 
