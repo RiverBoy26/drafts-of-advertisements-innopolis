@@ -4,10 +4,9 @@ Spring Boot API принимает исходное объявление, зап
 
 ## Запуск
 
-Нужен Docker Desktop с работающим Docker Engine. В `backend/.env` задайте как минимум `DB_PASSWORD` и `JWT_SECRET` (секрет JWT — не короче 32 байт). Файл `.env` не включается в Docker-образ. Опционально можно задать `CORS_ORIGINS` и `ML_BASE_URL`.
+Из корня проекта запустите Docker Desktop с работающим Docker Engine. В корневом `.env` задайте как минимум `DB_PASSWORD` и `JWT_SECRET` (секрет JWT — не короче 32 байт). Файл `.env` не включается в Docker-образ. Опционально можно задать `CORS_ORIGINS` и `ML_BASE_URL`.
 
 ```powershell
-cd backend
 docker compose up -d --build
 docker compose ps
 docker compose logs -f backend
@@ -15,7 +14,7 @@ docker compose logs -f backend
 
 Фронтенд доступен по `http://localhost:3000`, API — по `http://localhost:8080`, PostgreSQL — на порту `5432`. Внутри Compose бэкенд подключается к `postgres:5432` с пользователем `avito` и паролем из `DB_PASSWORD`. При повторном запуске данные БД сохраняются в томе `avito_pgdata`. Для остановки без удаления данных: `docker compose down`.
 
-Адрес API в браузерной сборке фронтенда по умолчанию — `http://localhost:8080`. Если сайт открывается с другого компьютера или домена, задайте `VITE_API_BASE_URL` и соответствующий `CORS_ORIGINS` в `backend/.env`, затем пересоберите фронтенд.
+Адрес API в браузерной сборке фронтенда по умолчанию — `http://localhost:8080`. Если сайт открывается с другого компьютера или домена, задайте `VITE_API_BASE_URL` и соответствующий `CORS_ORIGINS` в корневом `.env`, затем пересоберите фронтенд.
 
 При первом запуске обновлённой версии из существующей таблицы `users` удаляются старые столбцы `middle_name`, `birth_date` и `phone` вместе с их данными. Если эти данные нужны, сделайте резервную копию БД до обновления контейнера.
 
