@@ -1,0 +1,26 @@
+{
+  "artifact": "C:\\Users\\aramb\\programms\\drafts-of-advertisements-innopolis\\ai-service\\artifacts\\cpu_char_noise64.joblib",
+  "fit_seconds": 28.43608740000127,
+  "rows_original_unique": 4854,
+  "synthetic_negatives": 64,
+  "labels_original_unchanged": true,
+  "threshold": 0.45,
+  "ood_n": 128,
+  "ood_and_mixed_metrics": {
+    "cpu_clean": {
+      "ood_fpr_any_128": 0.4375,
+      "mean_ood_labels": 0.4765625,
+      "mix_prediction_preservation_vs_unmixed": 1.0,
+      "mean_label_changes": 0.0,
+      "p50_batch_repeated_ms": 4.118
+    },
+    "cpu_noise64": {
+      "ood_fpr_any_128": 0.015625,
+      "mean_ood_labels": 0.0546875,
+      "mix_prediction_preservation_vs_unmixed": 1.0,
+      "mean_label_changes": 0.0,
+      "p50_batch_repeated_ms": 4.05
+    }
+  },
+  "note": "Clean in-domain metric deliberately not computed here because artifact fit used all original texts. Use grouped 5-fold metrics in noise_training_metrics.json."
+}

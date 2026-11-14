@@ -7,6 +7,8 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
     && pip install --no-cache-dir -r requirements-transformer.txt
 COPY app ./app
 COPY data ./data
+COPY scripts ./scripts
+RUN python scripts/train_cpu_noise_candidate.py --count 1024
 EXPOSE 8001
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=12 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/ready', timeout=4)"
 CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8001"]
