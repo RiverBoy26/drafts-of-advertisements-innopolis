@@ -1,338 +1,1463 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  ArrowDownWideNarrow, ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronRight,
-  CircleHelp, Clipboard, Copy, FileCheck2, FilePenLine, FilePlus2, FileText,
-  Home, Layers3, LogOut, Menu, Pencil, Plus, Search, ShieldCheck, Sparkles,
-  Trash2, WandSparkles, X, AlertCircle, LoaderCircle, Eye, EyeOff, PanelLeftClose,
-} from 'lucide-react';
-import { analyzeText, exportDraft, generateDrafts, isDemo, searchCategories, updateDraft } from './api';
-import { exampleText } from './mockApi';
 
-const STORAGE = 'draftly-v1';
-const readSaved = () => {
-  try { return JSON.parse(localStorage.getItem(STORAGE)) || {}; } catch { return {}; }
-};
-const initial = readSaved();
-const emptyMessage = '—';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, CircleHelp,
+  Copy, FileSpreadsheet, FileText, House, LogOut, Menu, PanelLeftClose,
+  Pencil, Search, ShieldCheck, Sparkles, Trash2, UploadCloud, UserRound,
+  X, AlertCircle, Eye, EyeOff, SlidersHorizontal, Clock3, Plus,
+} from 'lucide-react';
+import { analyzeText, deleteDraft as removeDraft, listDrafts, login, logout, register, updateDraft } from './api.js';
+
+const MICROCATEGORIES = [
+  { mcId: 101, name: 'Ремонт под ключ' },
+  { mcId: 102, name: 'Штукатурные работы' },
+  { mcId: 103, name: 'Плиточные работы' },
+  { mcId: 104, name: 'Сантехника' },
+  { mcId: 105, name: 'Электрика' },
+  { mcId: 106, name: 'Поклейка обоев и малярные работы' },
+];
+
+const MAIN_CATEGORY_ID = 101;
+const SESSION_STORAGE = 'draftly-session-v1';
+
+const categoryFor = id =>
+  MICROCATEGORIES.find(c => c.mcId === Number(id));
+
+function safeRead(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || {};
+  } catch {
+    return {};
+  }
+}
+
+// CSV-парсер. Поддерживает запятую и точку с запятой,
+// текст в кавычках и переносы строк.
+function parseCsv(content) {
+  const source = content.replace(/^\uFEFF/, '');
+  const firstLine = source.split(/\r?\n/).find(line => line.trim()) || '';
+  const separator = firstLine.includes(';') ? ';' : ',';
+
+  const rows = [];
+  let currentRow = [];
+  let value = '';
+  let quoted = false;
+
+  const finishValue = () => {
+    currentRow.push(value);
+    value = '';
+  };
+
+  const finishRow = () => {
+    finishValue();
+
+    if (currentRow.some(cell => cell.trim())) {
+      rows.push(currentRow);
+    }
+
+    currentRow = [];
+  };
+
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+
+    if (ch === '"') {
+      if (quoted && source[i + 1] === '"') {
+        value += '"';
+        i++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (ch === separator && !quoted) {
+      finishValue();
+    } else if ((ch === '\n' || ch === '\r') && !quoted) {
+      if (ch === '\r' && source[i + 1] === '\n') {
+        i++;
+      }
+
+      finishRow();
+    } else {
+      value += ch;
+    }
+  }
+
+  if (quoted) {
+    throw new Error('В CSV есть незакрытые кавычки.');
+  }
+
+  if (value || currentRow.length) {
+    finishRow();
+  }
+
+  if (rows.length < 2) {
+    throw new Error(
+      'CSV должен содержать заголовки и хотя бы одну строку данных.'
+    );
+  }
+
+  const headers = rows[0].map(v => v.trim().toLowerCase());
+
+  const idIndex = headers.findIndex(h =>
+    ['id', 'ид'].includes(h)
+  );
+
+  const descriptionIndex = headers.findIndex(h =>
+    ['description', 'описание', 'text', 'текст'].includes(h)
+  );
+
+  if (idIndex < 0 || descriptionIndex < 0) {
+    throw new Error(
+      'В CSV нужны два столбца: id и description.'
+    );
+  }
+
+  const seenIds = new Set();
+
+  const records = rows.slice(1).map((cols, index) => {
+    const id = (cols[idIndex] || '').trim();
+    const description = (cols[descriptionIndex] || '').trim();
+
+    if (!id || !description) {
+      throw new Error(
+        `В строке ${index + 2} не заполнен id или description.`
+      );
+    }
+
+    if (seenIds.has(id)) {
+      throw new Error(`Повторяется id «${id}».`);
+    }
+
+    seenIds.add(id);
+
+    return { id, description };
+  });
+
+  if (records.length > 100) {
+    throw new Error(
+      'Для предпросмотра загрузите не более 100 записей.'
+    );
+  }
+
+  return records;
+}
 
 function Logo({ small = false }) {
-  return <span className={`brand ${small ? 'brand-small' : ''}`}>
-    <img src="/logo_draftly.png" alt="Draftly" />
-  </span>;
+  return (
+    <span className={`brand ${small ? 'brand-small' : ''}`}>
+      <img src="/logo_draftly.png" alt="Draftly" />
+    </span>
+  );
 }
 
-function Button({ children, variant = 'secondary', className = '', ...props }) {
-  return <button className={`button button-${variant} ${className}`} {...props}>{children}</button>;
+function Button({
+  children,
+  variant = 'secondary',
+  className = '',
+  ...props
+}) {
+  return (
+    <button
+      className={`button button-${variant} ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
 }
 
-function Field({ label, hint, error, ...props }) {
-  const id = props.id || props.name;
-  return <label className="field" htmlFor={id}>
-    <span>{label}</span>
-    <input id={id} {...props} aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined} />
-    {hint && <small>{hint}</small>}
-    {error && <small className="field-error" id={`${id}-error`}>{error}</small>}
-  </label>;
+function Field({ label, ...props }) {
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input {...props} />
+    </label>
+  );
 }
 
-function AuthPage({ onLogin }) {
+// Вход и регистрация
+function AuthPage({ onLogin, connectionError }) {
   const [mode, setMode] = useState('login');
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const submit = event => {
-    event.preventDefault(); setError('');
-    if (!name.trim() && mode === 'register') return setError('Укажите ваше имя.');
-    if (!/^\S+@\S+\.\S+$/.test(email)) return setError('Проверьте формат электронной почты.');
-    if (password.length < 6) return setError('Пароль должен содержать не менее 6 символов.');
-    if (mode === 'register' && password !== repeat) return setError('Пароли не совпадают.');
-    setBusy(true);
-    window.setTimeout(() => {
-      onLogin({ name: mode === 'register' ? name.trim() : email.split('@')[0], email });
-      setBusy(false);
-    }, 250);
+  const [loading, setLoading] = useState(false);
+
+  const submit = async e => {
+    e.preventDefault();
+    setError('');
+
+    if (mode === 'register' && !firstName.trim()) {
+      return setError('Укажите имя.');
+    }
+
+    if (mode === 'register' && !lastName.trim()) {
+      return setError('Укажите фамилию.');
+    }
+
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return setError('Укажите корректную почту.');
+    }
+
+    if (mode === 'register' && password.length < 8) {
+      return setError('Пароль должен содержать минимум 8 символов.');
+    }
+
+    if (mode === 'register' && password !== repeat) {
+      return setError('Пароли не совпадают.');
+    }
+
+    setLoading(true);
+    try {
+      await onLogin(mode, {
+        ...(mode === 'register' ? { firstName: firstName.trim(), lastName: lastName.trim() } : {}),
+        email: email.trim(),
+        password,
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
-  return <main className="auth-page">
-    <section className="auth-panel" aria-labelledby="auth-title">
-      <Logo />
-      <div className="auth-heading">
-        <h1 id="auth-title">{mode === 'login' ? 'С возвращением' : 'Создать аккаунт'}</h1>
-        <p>{mode === 'login' ? 'Войдите, чтобы продолжить работу с объявлениями' : 'Начните создавать объявления быстрее с Draftly'}</p>
+
+  const switchMode = () => {
+    setMode(v => v === 'login' ? 'register' : 'login');
+    setError('');
+    setPassword('');
+    setRepeat('');
+  };
+
+  return (
+    <main className="auth-page">
+      <div className="auth-card-shell">
+        <div className="auth-card-glow" />
+
+        <section className="auth-panel">
+          <Logo />
+
+          <div className="auth-heading">
+            <h1>
+              {mode === 'login' ? 'Вход в Draftly' : 'Регистрация'}
+            </h1>
+          </div>
+
+          <form onSubmit={submit}>
+            {mode === 'register' && (
+              <>
+                <Field
+                  label="Имя"
+                  value={firstName}
+                  onChange={e => setFirstName(e.target.value)}
+                  autoComplete="given-name"
+                  placeholder="Введите имя"
+                  required
+                />
+
+                <Field
+                  label="Фамилия"
+                  value={lastName}
+                  onChange={e => setLastName(e.target.value)}
+                  autoComplete="family-name"
+                  placeholder="Введите фамилию"
+                  required
+                />
+              </>
+            )}
+
+            <Field
+              label="Электронная почта"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="example@mail.ru"
+              required
+            />
+
+            <div className="password-field">
+              <Field
+                label="Пароль"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete={
+                  mode === 'login' ? 'current-password' : 'new-password'
+                }
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Не менее 8 символов"
+                required
+              />
+
+              <button
+                className="password-toggle"
+                type="button"
+                aria-label={
+                  showPassword ? 'Скрыть пароль' : 'Показать пароль'
+                }
+                onClick={() => setShowPassword(v => !v)}
+              >
+                {showPassword
+                  ? <EyeOff size={19} />
+                  : <Eye size={19} />}
+              </button>
+            </div>
+
+            {mode === 'register' && (
+              <Field
+                label="Повторите пароль"
+                type={showPassword ? 'text' : 'password'}
+                value={repeat}
+                onChange={e => setRepeat(e.target.value)}
+                placeholder="Повторите пароль"
+                required
+              />
+            )}
+
+          {(error || connectionError) && (
+              <p className="form-error" role="alert">
+                <AlertCircle size={16} />
+                {error || connectionError}
+              </p>
+            )}
+
+            <Button variant="primary" type="submit">
+              {mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+            </Button>
+          </form>
+
+          <p className="auth-switch">
+            {mode === 'login'
+              ? 'Нет аккаунта?'
+              : 'Уже есть аккаунт?'}{' '}
+
+            <button
+              type="button"
+              className="text-link"
+              onClick={switchMode}
+            >
+              {mode === 'login'
+                ? 'Зарегистрироваться'
+                : 'Войти'}
+            </button>
+          </p>
+        </section>
       </div>
-      <form onSubmit={submit} noValidate>
-        {mode === 'register' && <Field label="Имя" id="auth-name" autoComplete="name" value={name} onChange={e => setName(e.target.value)} placeholder="Как к вам обращаться?" required />}
-        <Field label="Электронная почта" id="auth-email" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="name@example.com" required />
-        <div className="password-field">
-          <Field label="Пароль" id="auth-password" type={showPassword ? 'text' : 'password'} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Не менее 6 символов" required />
-          <button type="button" className="password-toggle" aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'} onClick={() => setShowPassword(v => !v)}>{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button>
-        </div>
-        {mode === 'register' && <Field label="Повторите пароль" id="auth-repeat" type={showPassword ? 'text' : 'password'} autoComplete="new-password" value={repeat} onChange={e => setRepeat(e.target.value)} placeholder="Введите пароль ещё раз" required />}
-        {error && <p className="form-error" role="alert"><AlertCircle size={16} />{error}</p>}
-        <Button variant="primary" type="submit" disabled={busy}>{busy ? <LoaderCircle className="spin" size={17} /> : null}{mode === 'login' ? 'Войти' : 'Создать аккаунт'}<ArrowRight size={16} /></Button>
-      </form>
-      <p className="auth-switch">{mode === 'login' ? 'Ещё нет аккаунта?' : 'Уже есть аккаунт?'} <button type="button" className="link-button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}>{mode === 'login' ? 'Зарегистрироваться' : 'Войти'}</button></p>
-      <div className="auth-note"><ShieldCheck size={15} /> Демо-режим: данные остаются в этом браузере.</div>
-    </section>
-  </main>;
+    </main>
+  );
 }
 
+// Только два раздела в меню
 const navigation = [
-  { id: 'overview', label: 'Обзор', Icon: Home },
-  { id: 'analysis', label: 'Новый анализ', Icon: Sparkles },
+  { id: 'overview', label: 'Обзор', Icon: House },
   { id: 'drafts', label: 'Черновики', Icon: FileText },
-  { id: 'ads', label: 'Мои объявления', Icon: FileCheck2 },
 ];
 
-function AppHeader({ user, activePage, counts, onNavigate, onLogout }) {
+// Верхняя панель
+function AppHeader({
+  user,
+  page,
+  draftsCount,
+  go,
+  onLogout,
+}) {
   const [drawer, setDrawer] = useState(false);
   const [profile, setProfile] = useState(false);
-  const title = navigation.find(item => item.id === activePage)?.label || 'Новое объявление';
+
+  const accountName =
+    [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+    user.name ||
+    user.email ||
+    'Пользователь';
+
   useEffect(() => {
-    const close = event => { if (event.key === 'Escape') { setDrawer(false); setProfile(false); } };
+    const close = e => {
+      if (e.key === 'Escape') {
+        setDrawer(false);
+        setProfile(false);
+      }
+    };
+
     window.addEventListener('keydown', close);
+
     return () => window.removeEventListener('keydown', close);
   }, []);
-  const go = page => { onNavigate(page); setDrawer(false); };
-  return <>
-    <header className="topbar">
-      <div className="topbar-left">
-        <button className="icon-button menu-trigger" aria-label="Открыть меню" onClick={() => setDrawer(true)}><Menu size={20} /></button>
-        <Logo small /><span className="topbar-divider" /><span className="current-page">{title}</span>
-      </div>
-      <div className="profile-wrap">
-        <button className="profile-trigger" aria-expanded={profile} onClick={() => setProfile(v => !v)}>
-          <span className="avatar">{(user.name || 'П').slice(0, 1).toUpperCase()}</span><span className="profile-name">{user.name}</span><ChevronRight className={profile ? 'rotate-down' : 'rotate-right'} size={15} />
-        </button>
-        {profile && <div className="profile-menu"><strong>{user.name}</strong><small>{user.email}</small><button onClick={() => { setProfile(false); onLogout(); }}><LogOut size={16} /> Выйти</button></div>}
-      </div>
-    </header>
-    {drawer && <div className="drawer-layer">
-      <button className="drawer-backdrop" aria-label="Закрыть меню" onClick={() => setDrawer(false)} />
-      <aside className="navigation-drawer" aria-label="Основная навигация">
-        <div className="drawer-header"><Logo small /><button className="icon-button" aria-label="Закрыть меню" onClick={() => setDrawer(false)}><PanelLeftClose size={19} /></button></div>
-        <nav>{navigation.map(({ id, label, Icon }) => <button key={id} className={`nav-item ${activePage === id ? 'active' : ''}`} onClick={() => go(id)}><Icon size={18} /><span>{label}</span>{id === 'drafts' && <small>{counts.drafts}</small>}{id === 'ads' && <small>{counts.ads}</small>}</button>)}</nav>
-        <div className="drawer-footer"><CircleHelp size={16} /><span>Draftly помогает разложить описание на отдельные объявления.</span></div>
-      </aside>
-    </div>}
-  </>;
-}
 
-function PageHeading({ title, subtitle, action }) {
-  return <div className="page-heading"><div><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</div>{action}</div>;
-}
-
-function OverviewPage({ user, drafts, ads, totalPrepared, navigate }) {
-  const stats = [
-    { label: 'Черновики', value: drafts.length, Icon: FileText },
-    { label: 'Мои объявления', value: ads.length, Icon: FileCheck2 },
-    { label: 'Всего подготовлено', value: totalPrepared, Icon: Layers3 },
-  ];
-  return <>
-    <PageHeading title="Обзор" subtitle="Всё необходимое для создания и управления объявлениями" />
-    <section className="welcome-panel">
-      <div><span className="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</span><h2>Превратите свои услуги в готовые объявления</h2><p>Расскажите, чем вы занимаетесь. Draftly найдёт отдельные направления и подготовит тексты для публикации.</p><Button variant="primary" onClick={() => navigate('analysis')}><Sparkles size={17} /> Начать анализ <ArrowRight size={16} /></Button></div>
-      <div className="welcome-note"><span><FileCheck2 size={20} /></span><div><strong>Один текст — несколько направлений</strong><small>Проверьте каждое перед созданием объявления</small></div></div>
-    </section>
-    <section className="stats-row" aria-label="Статистика">
-      {stats.map(({ label, value, Icon }) => <div className="stat-item" key={label}><span className="stat-icon"><Icon size={18} /></span><div><strong>{value}</strong><small>{label}</small></div></div>)}
-    </section>
-    <section className="quick-section"><div className="section-heading"><div><h2>Быстрый доступ</h2><p>Продолжите работу или начните с нового описания</p></div></div>
-      <div className="quick-links">
-        <button onClick={() => navigate('analysis')}><span><Sparkles size={18} /></span><div><strong>Новый анализ</strong><small>Найдите услуги в исходном тексте</small></div><ChevronRight size={17} /></button>
-        <button onClick={() => navigate('drafts')}><span><FileText size={18} /></span><div><strong>Черновики</strong><small>{drafts.length ? `${drafts.length} подготовленных объявлений` : 'Проверьте созданные варианты'}</small></div><ChevronRight size={17} /></button>
-        <button onClick={() => navigate('ads')}><span><FileCheck2 size={18} /></span><div><strong>Мои объявления</strong><small>{ads.length ? `${ads.length} одобренных объявлений` : 'Сохраните готовые к публикации'}</small></div><ChevronRight size={17} /></button>
-      </div>
-    </section>
-    {drafts.length > 0 && <section className="recent-section"><div className="section-heading"><div><h2>Недавние черновики</h2></div><button className="link-button" onClick={() => navigate('drafts')}>Все черновики <ArrowRight size={15} /></button></div><div className="recent-list">{drafts.slice(0, 3).map(d => <button key={d.id} onClick={() => navigate('drafts')}><FileText size={17} /><span><strong>{d.title}</strong><small>{d.microcategory || d.category || 'Категория не указана'}</small></span><ChevronRight size={16} /></button>)}</div></section>}
-  </>;
-}
-
-function AnalysisPage({ text, setText, sourceText, services, setServices, onAnalyze, onGenerate, onGenerateOne, onNavigate, busy, error, clearError, analysisReady, generatedCount }) {
-  const selectedCount = services.filter(service => service.selected).length;
-  const [expanded, setExpanded] = useState(false);
-  return <>
-    <PageHeading title="Новый анализ" subtitle="Вставьте описание — Draftly выделит отдельные направления и подготовит объявления." action={generatedCount ? <Button onClick={() => onNavigate('generated')}><FileText size={15} /> Подготовленные объявления ({generatedCount})</Button> : null} />
-    <section className="source-panel">
-      <div className="section-heading"><div><h2>Опишите, чем вы занимаетесь</h2><p>Опишите товары, услуги или свою деятельность простыми словами.</p></div></div>
-      <textarea className="source-input" value={text} onChange={e => setText(e.target.value)} maxLength={10000} placeholder="Например: Выполняю ремонт квартир под ключ. Укладываю плитку, клею обои и устанавливаю двери…" aria-label="Исходное описание" />
-      <div className="source-tools"><span>{text.length.toLocaleString('ru-RU')} / 10 000 символов</span><div>{text && <button className="link-button muted-link" onClick={() => setText('')}><X size={14} /> Очистить</button>}<button className="link-button" onClick={() => setText(exampleText)}><WandSparkles size={15} /> Вставить пример</button></div></div>
-      {error && <div className="inline-alert" role="alert"><AlertCircle size={16} /><span>{error}</span><button aria-label="Закрыть сообщение" onClick={clearError}><X size={15} /></button></div>}
-      <div className="source-submit"><Button variant="primary" onClick={onAnalyze} disabled={busy === 'analyze' || text.trim().length < 12}>{busy === 'analyze' ? <LoaderCircle size={17} className="spin" /> : <Search size={17} />}{busy === 'analyze' ? 'Анализируем описание…' : 'Найти услуги'}<ArrowRight size={16} /></Button><small>Текст отправится на анализ и останется доступен для проверки.</small></div>
-    </section>
-    {analysisReady && <section className="results-section">
-      <div className="source-summary"><div><strong>Исходное описание</strong><span>{sourceText.length.toLocaleString('ru-RU')} символов</span></div><p className={!expanded ? 'clamp-text' : ''}>{sourceText}</p>{sourceText.length > 180 && <button className="link-button" onClick={() => setExpanded(v => !v)}>{expanded ? 'Свернуть' : 'Развернуть полностью'}</button>}</div>
-      <div className="section-heading results-heading"><div><h2>Результаты анализа <span className="count-label">{services.length}</span></h2><p>Проверьте найденные направления перед созданием объявлений.</p></div></div>
-      {services.length === 0 ? <EmptyState title="Услуги не найдены" description="Попробуйте добавить больше подробностей и запустить анализ ещё раз." action={<Button variant="secondary" onClick={() => setText(exampleText)}>Вставить пример</Button>} /> : <>
-        {isDemo && <p className="demo-caption"><ShieldCheck size={14} /> Демонстрационный анализ по ключевым словам</p>}
-        <div className="service-list">{services.map((service, index) => <ServiceResult key={service.id} service={service} index={index} busy={busy === `generate-${service.id}`} onChange={next => setServices(prev => prev.map(item => item.id === service.id ? next : item))} onDelete={() => onGenerateOne(service, 'delete')} onGenerate={() => onGenerateOne(service, 'generate')} />)}</div>
-        <div className="bulk-action"><div><strong>{selectedCount} из {services.length} выбрано</strong><small>Можно сформировать отдельное объявление у каждой услуги.</small></div><Button variant="primary" disabled={!selectedCount || busy.startsWith('generate')} onClick={onGenerate}>{busy === 'generate' ? <LoaderCircle size={17} className="spin" /> : <Sparkles size={17} />}{busy === 'generate' ? 'Формируем объявления…' : `Сформировать объявления (${selectedCount})`}</Button></div>
-      </>}
-    </section>}
-  </>;
-}
-
-function ServiceResult({ service, index, onChange, onDelete, onGenerate, busy }) {
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(service.service || '');
-  const [microcategory, setMicrocategory] = useState(service.microcategory || '');
-  const [category, setCategory] = useState(service.category || '');
-  const [categoryOptions, setCategoryOptions] = useState([]);
-  const [editError, setEditError] = useState('');
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
-  useEffect(() => {
-    if (!editing || microcategory.trim().length < 2) { setCategoryOptions([]); return undefined; }
-    let active = true;
-    const timer = window.setTimeout(() => { searchCategories(microcategory).then(items => { if (active) setCategoryOptions(items); }).catch(() => { if (active) setCategoryOptions([]); }); }, 250);
-    return () => { active = false; window.clearTimeout(timer); };
-  }, [editing, microcategory]);
-  const save = () => {
-    const changedCategory = microcategory.trim() !== (service.microcategory || '');
-    const match = categoryOptions.find(item => item.name.toLowerCase() === microcategory.trim().toLowerCase());
-    if (changedCategory && !match && !isDemo) { setEditError('Выберите подкатегорию из справочника.'); return; }
-    onChange({ ...service, service: name.trim(), title: name.trim() === service.service ? service.title : name.trim(), category: match?.path?.[0] || category.trim(), microcategory: match?.name || microcategory.trim(), categoryId: match?.parentId || service.categoryId, microcategoryId: match?.id || service.microcategoryId, classificationDirty: service.classificationDirty || changedCategory });
-    setEditError(''); setEditing(false);
+  const navigate = next => {
+    go(next);
+    setDrawer(false);
+    setProfile(false);
   };
-  return <article className="service-result">
-    <div className="service-result-main">
-      <label className="selection-control"><input type="checkbox" checked={service.selected !== false} onChange={e => onChange({ ...service, selected: e.target.checked })} /><span className="custom-check"><Check size={13} /></span><span className="sr-only">Выбрать {service.service}</span></label>
-      <span className="result-number">{String(index + 1).padStart(2, '0')}</span>
-      <div className="result-copy"><div className="result-title"><h3>{service.service || 'Направление без названия'}</h3>{service.confidence && <span className={`confidence confidence-${service.confidence}`}>{service.confidence === 'low' ? 'Низкая уверенность' : service.confidence === 'medium' ? 'Проверьте категорию' : 'Категория найдена'}</span>}</div>
-        <div className="category-line"><span>{service.category || 'Категория не указана'}</span><ChevronRight size={13} /><strong>{service.microcategory || 'Подкатегория не указана'}</strong></div>
-        {service.sourceFragment && <p className="source-fragment">«{service.sourceFragment}»</p>}
+
+  return (
+    <>
+      <header className="topbar">
+        <div className="topbar-left">
+          <button
+            className="icon-button menu-trigger"
+            aria-label="Открыть меню"
+            aria-expanded={drawer}
+            onClick={() => {
+              setDrawer(true);
+              setProfile(false);
+            }}
+          >
+            <Menu size={23} />
+          </button>
+
+          <Logo small />
+        </div>
+
+        <div className="topbar-right">
+          <div className="profile-wrap">
+            <button
+              className="profile-trigger"
+              aria-expanded={profile}
+              onClick={() => setProfile(v => !v)}
+            >
+              <span className="avatar">
+                <UserRound size={18} />
+              </span>
+
+              <span className="profile-name">
+                {accountName}
+              </span>
+
+              <ChevronDown size={16} />
+            </button>
+
+            {profile && (
+              <div className="profile-menu">
+                <strong>{accountName}</strong>
+                <small>{user.email}</small>
+
+                <button
+                  onClick={() => {
+                    setProfile(false);
+                    onLogout();
+                  }}
+                >
+                  <LogOut size={17} />
+                  Выйти
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {profile && (
+        <button
+          className="profile-outside"
+          aria-label="Закрыть профиль"
+          onClick={() => setProfile(false)}
+        />
+      )}
+
+      {drawer && (
+        <div className="drawer-layer">
+          <button
+            className="drawer-backdrop"
+            aria-label="Закрыть меню"
+            onClick={() => setDrawer(false)}
+          />
+
+          <aside
+            className="navigation-drawer"
+            aria-label="Навигация"
+          >
+            <div className="drawer-header">
+              <Logo small />
+
+              <button
+                className="icon-button"
+                aria-label="Закрыть меню"
+                onClick={() => setDrawer(false)}
+              >
+                <PanelLeftClose size={21} />
+              </button>
+            </div>
+
+            <p className="drawer-caption">МОЁ ПРОСТРАНСТВО</p>
+
+            <nav>
+              {navigation.map(({ id, label, Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => navigate(id)}
+                  className={`nav-item ${
+                    page === id ? 'active' : ''
+                  }`}
+                  aria-current={page === id ? 'page' : undefined}
+                >
+                  <Icon size={20} />
+                  <span>{label}</span>
+
+                  {id === 'drafts' && (
+                    <small>{draftsCount}</small>
+                  )}
+                </button>
+              ))}
+            </nav>
+
+            <div className="drawer-footer">
+              <CircleHelp size={19} />
+              Подготовленные тексты можно проверить и изменить в черновиках.
+            </div>
+          </aside>
+        </div>
+      )}
+    </>
+  );
+}
+
+// Главная страница: текст или CSV
+function OverviewPage({
+  inputMode,
+  setInputMode,
+  description,
+  setDescription,
+  records,
+  setRecords,
+  fileName,
+  setFileName,
+  onAnalyze,
+  error,
+  analyzing,
+}) {
+  const fileInput = useRef(null);
+  const [drag, setDrag] = useState(false);
+  const [fileError, setFileError] = useState('');
+
+  const acceptFile = async file => {
+    if (!file) return;
+
+    setFileError('');
+
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setRecords([]);
+      setFileName('');
+      setFileError('Выберите файл формата .csv');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setRecords([]);
+      setFileName('');
+      setFileError('Размер файла не должен превышать 2 МБ.');
+      return;
+    }
+
+    try {
+      const data = parseCsv(await file.text());
+
+      setRecords(data);
+      setFileName(file.name);
+      setInputMode('csv');
+    } catch (e) {
+      setRecords([]);
+      setFileName('');
+      setFileError(e.message);
+    }
+
+    if (fileInput.current) {
+      fileInput.current.value = '';
+    }
+  };
+
+  return (
+    <>
+      <div className="page-heading">
+        <h1>Создать объявление</h1>
       </div>
-      <div className="result-actions"><button className="icon-button" aria-label="Изменить направление" onClick={() => { setName(service.service || ''); setCategory(service.category || ''); setMicrocategory(service.microcategory || ''); setEditing(v => !v); }}><Pencil size={16} /></button><button className="icon-button danger-icon" aria-label="Удалить направление" onClick={() => setDeleteConfirm(true)}><Trash2 size={16} /></button></div>
-    </div>
-    {editing && <div className="service-edit"><Field label="Название" value={name} onChange={e => setName(e.target.value)} /><Field label="Категория" value={category} onChange={e => setCategory(e.target.value)} /><label className="field"><span>Подкатегория</span><input list={`categories-${service.id}`} value={microcategory} onChange={e => { setMicrocategory(e.target.value); setEditError(''); }} /><datalist id={`categories-${service.id}`}>{categoryOptions.map(item => <option key={item.id} value={item.name}>{item.path?.join(' → ')}</option>)}</datalist></label>{editError && <p className="form-error" role="alert">{editError}</p>}<div className="edit-actions"><Button onClick={() => { setEditing(false); setEditError(''); }}>Отмена</Button><Button variant="primary" disabled={!name.trim()} onClick={save}><Check size={15} /> Применить</Button></div></div>}
-    <div className="service-bottom"><span>{service.sourceFragment ? 'Фрагмент исходного описания показан выше' : 'Проверьте название и категорию перед созданием'}</span><Button variant="primary" className="small-button" disabled={!service.selected || busy} onClick={onGenerate}>{busy ? <LoaderCircle size={15} className="spin" /> : <FilePlus2 size={15} />}{busy ? 'Создаём…' : 'Сформировать объявление'}</Button></div>
-    {deleteConfirm && <ConfirmModal title="Удалить направление?" description={`«${service.service}» исчезнет из результатов этого анализа.`} confirmLabel="Удалить направление" onCancel={() => setDeleteConfirm(false)} onConfirm={() => { setDeleteConfirm(false); onDelete(); }} />}
-  </article>;
+
+      <section className="input-panel">
+        <div className="input-panel-heading">
+          <h2>Добавьте описание услуг</h2>
+        </div>
+
+        <div
+          className="input-mode-tabs"
+          role="tablist"
+          aria-label="Способ ввода"
+        >
+          <button
+            role="tab"
+            aria-selected={inputMode === 'text'}
+            className={inputMode === 'text' ? 'active' : ''}
+            onClick={() => setInputMode('text')}
+          >
+            <FileText size={19} />
+            Ввести текст
+          </button>
+
+          <button
+            role="tab"
+            aria-selected={inputMode === 'csv'}
+            className={inputMode === 'csv' ? 'active' : ''}
+            onClick={() => setInputMode('csv')}
+          >
+            <FileSpreadsheet size={19} />
+            Загрузить CSV
+          </button>
+        </div>
+
+        {inputMode === 'text' ? (
+          <div className="text-input-view" role="tabpanel">
+            <label
+              className="input-caption"
+              htmlFor="ad-description"
+            >
+              Описание объявления
+            </label>
+
+            <textarea
+              id="ad-description"
+              className="description-input"
+              maxLength={10000}
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Например: Выполняем ремонт квартир под ключ, устанавливаем сантехнику, проводим электромонтажные работы..."
+            />
+
+            <div className="input-count">
+              {description.length.toLocaleString('ru-RU')} / 10 000 символов
+            </div>
+          </div>
+        ) : (
+          <div className="csv-input-view" role="tabpanel">
+            <input
+              className="sr-only"
+              ref={fileInput}
+              type="file"
+              accept=".csv,text/csv"
+              aria-label="Выбрать CSV-файл"
+              onChange={e => acceptFile(e.target.files?.[0])}
+            />
+
+            <div
+              className={`upload-zone ${drag ? 'dragging' : ''}`}
+              onDragOver={e => {
+                e.preventDefault();
+                setDrag(true);
+              }}
+              onDragLeave={e => {
+                e.preventDefault();
+                setDrag(false);
+              }}
+              onDrop={e => {
+                e.preventDefault();
+                setDrag(false);
+                acceptFile(e.dataTransfer.files?.[0]);
+              }}
+            >
+              <span className="upload-icon">
+                <UploadCloud size={27} />
+              </span>
+
+              <strong>Перетащите CSV-файл сюда</strong>
+              <p>или выберите его с компьютера</p>
+
+              <Button
+                onClick={() => fileInput.current?.click()}
+              >
+                Выбрать файл
+              </Button>
+
+              <span className="upload-format">
+                Столбцы: id, description · до 2 МБ
+              </span>
+            </div>
+
+            {fileError && (
+              <p className="inline-error" role="alert">
+                <AlertCircle size={17} />
+                {fileError}
+              </p>
+            )}
+
+            {records.length > 0 && (
+              <div className="csv-preview">
+                <div className="csv-preview-header">
+                  <span className="csv-file-symbol">
+                    <FileSpreadsheet size={22} />
+                  </span>
+
+                  <div>
+                    <strong>{fileName}</strong>
+                    <small>{records.length} записей</small>
+                  </div>
+
+                  <CheckCircle2
+                    size={19}
+                    className="success-icon"
+                  />
+
+                  <button
+                    className="icon-button"
+                    aria-label="Удалить файл"
+                    onClick={() => {
+                      setRecords([]);
+                      setFileName('');
+                    }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="csv-table-scroll">
+                  <table className="csv-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Описание</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {records.slice(0, 5).map((record, index) => (
+                        <tr key={`${record.id}-${index}`}>
+                          <td>{record.id}</td>
+                          <td>{record.description}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {records.length > 5 && (
+                  <p className="csv-more">
+                    И ещё {records.length - 5} записей
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="input-panel-footer">
+          <Button
+            className="analyze-button"
+            variant="primary"
+            onClick={onAnalyze}
+            disabled={
+              analyzing || (inputMode === 'text'
+                ? description.trim().length < 12
+                : records.length === 0)
+            }
+          >
+            <Sparkles size={19} />
+            {analyzing ? 'Анализируем…' : 'Анализировать'}
+            <ArrowRight size={17} />
+          </Button>
+        </div>
+
+        {error && (
+          <p role="alert" className="inline-error">
+            <AlertCircle size={17} />
+            {error}
+          </p>
+        )}
+      </section>
+    </>
+  );
 }
 
-function EmptyState({ title, description, action }) {
-  return <div className="empty-state"><span><FileText size={21} /></span><h3>{title}</h3><p>{description}</p>{action}</div>;
+// Результаты анализа в разделе «Обзор»
+
+function ResultPage({ analysis, onBack, onDrafts, onCopy }) {
+  const total = analysis.groups.reduce(
+    (sum, group) => sum + group.proposals.length,
+    0
+  );
+
+  const isBatch = analysis.sourceType === 'csv';
+
+  const renderProposal = (proposal, number) => (
+    <article className="result-draft-row" key={proposal.key}>
+      <span className="result-draft-index" aria-hidden="true">
+        {String(number).padStart(2, '0')}
+      </span>
+
+      <div className="result-draft-body">
+        <span className="draft-category">
+          {categoryFor(proposal.mcId)?.name || 'Категория'}
+        </span>
+        <h3>{proposal.title}</h3>
+        <p>{proposal.text}</p>
+      </div>
+
+      <button
+        type="button"
+        className="draft-copy"
+        onClick={() => onCopy(proposal)}
+        title="Скопировать текст объявления"
+      >
+        <Copy size={16} />
+        <span>Копировать</span>
+      </button>
+    </article>
+  );
+
+  return (
+    <>
+      <div className="page-heading result-page-heading">
+        <button
+          className="back-link"
+          type="button"
+          onClick={onBack}
+        >
+          <ArrowLeft size={17} />
+          К вводу данных
+        </button>
+        <h1>Результаты анализа</h1>
+      </div>
+
+      <div className="result-dashboard">
+        <div className="result-success">
+          <span className="result-success-icon">
+            <CheckCircle2 size={24} />
+          </span>
+
+          <div>
+            <strong>{total ? 'Черновики созданы' : 'Анализ завершён'}</strong>
+            <p>
+              {total
+                ? 'Все предложения автоматически добавлены в раздел «Черновики».'
+                : 'Подходящих категорий для новых черновиков не найдено.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="result-stat">
+          <span>Обработано объявлений</span>
+          <strong>{analysis.groups.length}</strong>
+        </div>
+
+        <div className="result-stat result-stat-accent">
+          <span>Создано черновиков</span>
+          <strong>{total}</strong>
+        </div>
+      </div>
+
+      <div className="result-actions">
+        <div>
+          <h2>Готовые черновики</h2>
+          <p>
+            {isBatch
+              ? 'По исходным объявлениям'
+              : 'Для вашего объявления'}
+          </p>
+        </div>
+
+        <Button
+          variant="primary"
+          type="button"
+          onClick={onDrafts}
+        >
+          <FileText size={17} />
+          Открыть черновики
+          <ArrowRight size={16} />
+        </Button>
+      </div>
+
+      <div className="analysis-group-list">
+        {analysis.groups.map((group, index) => (
+          isBatch ? (
+            <details
+              className="analysis-group"
+              key={`${analysis.runId}-${index}`}
+              open={index === 0 ? true : undefined}
+            >
+              <summary className="analysis-group-summary">
+                <span className="analysis-group-title">
+                  <span className="analysis-group-number">
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <strong>Объявление {index + 1}</strong>
+                </span>
+
+                <span className="analysis-group-right">
+                  <span className="analysis-group-count">
+                    {group.proposals.length}{' '}
+                    {group.proposals.length % 10 === 1 && group.proposals.length % 100 !== 11
+                      ? 'черновик'
+                      : group.proposals.length % 10 >= 2 && group.proposals.length % 10 <= 4 && (group.proposals.length % 100 < 12 || group.proposals.length % 100 > 14)
+                        ? 'черновика'
+                        : 'черновиков'}
+                  </span>
+
+                  <ChevronDown
+                    size={19}
+                    className="analysis-chevron"
+                  />
+                </span>
+              </summary>
+
+              <div className="analysis-group-body">
+                {group.proposals.map((proposal, proposalIndex) =>
+                  renderProposal(proposal, proposalIndex + 1)
+                )}
+              </div>
+            </details>
+          ) : (
+            <div
+              className="analysis-group analysis-group-single"
+              key={`${analysis.runId}-${index}`}
+            >
+              {group.proposals.map((proposal, proposalIndex) =>
+                renderProposal(proposal, proposalIndex + 1)
+              )}
+            </div>
+          )
+        ))}
+      </div>
+    </>
+  );
 }
 
-function AdCard({ item, index, section, onEdit, onCopy, onRemove, onApprove }) {
-  return <article className="ad-card"><div className="ad-card-top"><span className="result-number">{String(index + 1).padStart(2, '0')}</span><span className={`status-pill ${section === 'ads' ? 'status-ready' : ''}`}>{section === 'ads' ? 'Готово к публикации' : section === 'generated' ? 'Подготовлено' : 'Черновик'}</span><time>{item.updatedAt || item.createdAt ? new Date(item.updatedAt || item.createdAt).toLocaleDateString('ru-RU') : 'Сегодня'}</time></div>
-    <h3>{item.title}</h3><p className="ad-category">{item.category || 'Категория не указана'}{item.microcategory ? ` · ${item.microcategory}` : ''}</p><p className="ad-description">{item.description || 'Описание пока не добавлено.'}</p>
-    <div className="ad-actions"><Button variant="secondary" onClick={() => onCopy(item)}><Copy size={15} /> Скопировать</Button><Button variant="secondary" onClick={() => onEdit(item)}><Pencil size={15} /> Редактировать</Button>{section === 'drafts' ? <Button variant="soft" onClick={() => onApprove(item)}><CheckCircle2 size={15} /> В мои объявления</Button> : section === 'generated' ? <Button variant="soft" onClick={() => onApprove(item)}><FileText size={15} /> Сохранить в черновики</Button> : <Button variant="soft" onClick={() => onApprove(item)}><ArrowLeft size={15} /> В черновики</Button>}<button className="icon-button danger-icon" aria-label="Удалить объявление" onClick={() => onRemove(item)}><Trash2 size={16} /></button></div>
-  </article>;
-}
 
-function CollectionPage({ section, items, onNavigate, onEdit, onCopy, onRemove, onApprove, error, clearError }) {
+// Страница «Черновики»
+function DraftsPage({
+  items,
+  onNew,
+  onEdit,
+  onDelete,
+  onCopy,
+}) {
   const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('all');
   const [sort, setSort] = useState('newest');
-  const isAds = section === 'ads';
-  const sorted = useMemo(() => items.filter(item => `${item.title} ${item.description} ${item.microcategory || ''} ${item.category || ''}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => {
-    const aDate = new Date(a.updatedAt || a.createdAt || 0).getTime(); const bDate = new Date(b.updatedAt || b.createdAt || 0).getTime();
-    return sort === 'newest' ? bDate - aDate : aDate - bDate;
-  }), [items, query, sort]);
-  return <>
-    <PageHeading title={isAds ? 'Мои объявления' : 'Черновики'} subtitle={isAds ? 'Сохранённые объявления, которые вы готовы использовать для публикации.' : 'Подготовленные объявления. Проверьте текст, внесите изменения и скопируйте.'} action={<Button variant="primary" onClick={() => onNavigate('analysis')}><Plus size={16} /> Создать новое</Button>} />
-    {error && <div className="inline-alert" role="alert"><AlertCircle size={16} /><span>{error}</span><button aria-label="Закрыть сообщение" onClick={clearError}><X size={15} /></button></div>}
-    <div className="collection-toolbar"><div className="collection-count"><strong>{items.length}</strong><span>{isAds ? 'сохранено' : 'всего черновиков'}</span></div><label className="search-control"><Search size={17} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск по названию и описанию" aria-label="Поиск объявлений" />{query && <button aria-label="Очистить поиск" onClick={() => setQuery('')}><X size={14} /></button>}</label><label className="sort-control"><ArrowDownWideNarrow size={16} /><select value={sort} onChange={e => setSort(e.target.value)} aria-label="Сортировка по дате"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option></select></label></div>
-    {sorted.length ? <div className="ad-list">{sorted.map((item, index) => <AdCard key={item.id} item={item} index={index} section={section} onEdit={onEdit} onCopy={onCopy} onRemove={onRemove} onApprove={onApprove} />)}</div> : <EmptyState title={items.length ? 'Ничего не найдено' : isAds ? 'Здесь появятся ваши объявления' : 'Пока нет черновиков'} description={items.length ? 'Измените запрос поиска и попробуйте снова.' : isAds ? 'Переносите сюда понравившиеся варианты из черновиков, чтобы быстро находить их и копировать.' : 'Проведите анализ исходного описания и сформируйте первое объявление.'} action={<Button variant={items.length ? 'secondary' : 'primary'} onClick={() => items.length ? setQuery('') : onNavigate(isAds ? 'drafts' : 'analysis')}>{items.length ? 'Сбросить поиск' : isAds ? 'Перейти к черновикам' : 'Начать анализ'}</Button>} />}
-  </>;
+
+  const filtered = useMemo(() => {
+    return items
+      .filter(item => {
+        const haystack = `${
+          item.title || ''
+        } ${
+          item.text || ''
+        } ${
+          categoryFor(item.mcId)?.name || ''
+        } ${
+          item.sourceId || ''
+        }`.toLowerCase();
+
+        return (
+          haystack.includes(query.toLowerCase()) &&
+          (
+            category === 'all' ||
+            Number(category) === Number(item.mcId)
+          )
+        );
+      })
+      .sort((a, b) => {
+        const first = new Date(
+          a.updatedAt || a.createdAt
+        ).getTime();
+
+        const second = new Date(
+          b.updatedAt || b.createdAt
+        ).getTime();
+
+        return sort === 'newest'
+          ? second - first
+          : first - second;
+      });
+  }, [items, query, category, sort]);
+
+  return (
+    <>
+      <div className="page-heading">
+        <h1>Черновики</h1>
+      </div>
+
+      <div className="collection-toolbar">
+        <label className="collection-search">
+          <Search size={19} />
+
+          <input
+            placeholder="Поиск по черновикам"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+          />
+
+          {query && (
+            <button
+              aria-label="Очистить"
+              onClick={() => setQuery('')}
+            >
+              <X size={16} />
+            </button>
+          )}
+        </label>
+
+        <div className="collection-select">
+          <SlidersHorizontal size={17} />
+
+          <select
+            value={category}
+            onChange={e => setCategory(e.target.value)}
+            aria-label="Микрокатегория"
+          >
+            <option value="all">Все категории</option>
+
+            {MICROCATEGORIES.map(c => (
+              <option key={c.mcId} value={c.mcId}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="collection-select">
+          <Clock3 size={17} />
+
+          <select
+            aria-label="Сортировка"
+            value={sort}
+            onChange={e => setSort(e.target.value)}
+          >
+            <option value="newest">Сначала новые</option>
+            <option value="oldest">Сначала старые</option>
+          </select>
+        </div>
+      </div>
+
+      <p className="results-count">
+        Найдено: {filtered.length}
+      </p>
+
+      {!filtered.length ? (
+        <div className="empty-page empty-inline">
+          <FileText size={32} />
+
+          <h3>
+            {items.length
+              ? 'Ничего не найдено'
+              : 'Пока нет черновиков'}
+          </h3>
+
+          <p>
+            {items.length
+              ? 'Попробуйте изменить условия поиска.'
+              : 'После анализа здесь появятся сохранённые объявления.'}
+          </p>
+
+          <Button
+            onClick={
+              items.length
+                ? () => {
+                    setQuery('');
+                    setCategory('all');
+                  }
+                : onNew
+            }
+          >
+            {items.length
+              ? 'Сбросить фильтры'
+              : 'Создать объявление'}
+          </Button>
+        </div>
+      ) : (
+
+        <div className="collection-list">
+          {filtered.map(item => (
+            <article className="listing" key={item.id}>
+
+              {/* Название объявления */}
+              <h3>
+                {item.title ||
+                  categoryFor(item.mcId)?.name ||
+                  'Без заголовка'}
+              </h3>
+
+              {/* Категория */}
+              <p className="listing-category">
+                Категория: {categoryFor(item.mcId)?.name || 'Не определена'}
+              </p>
+
+              {/* Описание */}
+              <p className="listing-text">
+                {item.text || 'Описание пока не заполнено.'}
+              </p>
+
+              {/* Кнопки управления */}
+              <div className="listing-actions">
+                <button onClick={() => onEdit(item)}>
+                  <Pencil size={16} />
+                  Редактировать
+                </button>
+
+                <button onClick={() => onCopy(item)}>
+                  <Copy size={16} />
+                  Скопировать
+                </button>
+
+                <button
+                  className="delete-link"
+                  onClick={() => onDelete(item)}
+                >
+                  <Trash2 size={16} />
+                  Удалить
+                </button>
+              </div>
+
+            </article>
+          ))}
+        </div>
+
+      )}
+    </>
+  );
 }
 
-function EditModal({ item, busy, onClose, onSave }) {
-  const [edited, setEdited] = useState({ ...item });
+// Редактирование черновика
+function EditModal({
+  item,
+  onClose,
+  onSave,
+}) {
+  const [title, setTitle] = useState(item.title || '');
+  const [text, setText] = useState(item.text || '');
   const [error, setError] = useState('');
-  useEffect(() => { const close = e => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close); }, [onClose]);
-  return <div className="modal-layer" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="edit-title"><div className="modal-head"><div><h2 id="edit-title">Редактировать объявление</h2><p>Изменения сохранятся в текущем списке.</p></div><button className="icon-button" aria-label="Закрыть" onClick={onClose}><X size={18} /></button></div><div className="modal-body"><Field label="Заголовок" value={edited.title || ''} onChange={e => setEdited(prev => ({ ...prev, title: e.target.value }))} maxLength={100} /><label className="field"><span>Описание</span><textarea rows={8} value={edited.description || ''} onChange={e => setEdited(prev => ({ ...prev, description: e.target.value }))} /></label>{error && <p className="form-error" role="alert">{error}</p>}</div><div className="modal-actions"><Button onClick={onClose}>Отмена</Button><Button variant="primary" disabled={busy || !edited.title.trim() || !edited.description.trim()} onClick={async () => { try { await onSave(edited); } catch (err) { setError(err.message || 'Не удалось сохранить изменения.'); } }}><Check size={16} /> {busy ? 'Сохраняем…' : 'Сохранить'}</Button></div></section></div>;
+
+  useEffect(() => {
+    const listener = e => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', listener);
+
+    return () => window.removeEventListener('keydown', listener);
+  }, [onClose]);
+
+  const submit = e => {
+    e.preventDefault();
+
+    if (!title.trim() || !text.trim()) {
+      return setError(
+        'Заполните заголовок и описание.'
+      );
+    }
+
+    onSave({
+      ...item,
+      title: title.trim(),
+      text: text.trim(),
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  return (
+    <div
+      className="modal-layer"
+      onMouseDown={e => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <section
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-title"
+      >
+        <div className="modal-head">
+          <div>
+            <h2 id="edit-title">
+              Редактирование черновика
+            </h2>
+
+            <p>
+              {categoryFor(item.mcId)?.name}
+            </p>
+          </div>
+
+          <button
+            className="icon-button"
+            aria-label="Закрыть"
+            onClick={onClose}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={submit}>
+          <label className="field">
+            <span>Заголовок</span>
+
+            <input
+              value={title}
+              maxLength={110}
+              onChange={e => setTitle(e.target.value)}
+            />
+          </label>
+
+          <label className="field">
+            <span>Описание</span>
+
+            <textarea
+              value={text}
+              rows={7}
+              onChange={e => setText(e.target.value)}
+            />
+          </label>
+
+          {error && (
+            <p className="inline-error">{error}</p>
+          )}
+
+          <div className="modal-actions">
+            <Button
+              type="button"
+              onClick={onClose}
+            >
+              Отмена
+            </Button>
+
+            <Button
+              type="submit"
+              variant="primary"
+            >
+              <Check size={16} />
+              Сохранить
+            </Button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
-function ConfirmModal({ title, description, confirmLabel, onCancel, onConfirm, danger = true }) {
-  useEffect(() => { const close = e => { if (e.key === 'Escape') onCancel(); }; window.addEventListener('keydown', close); return () => window.removeEventListener('keydown', close); }, [onCancel]);
-  return <div className="modal-layer nested-modal" onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}><section className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"><div className="modal-head"><div><h2 id="confirm-title">{title}</h2><p>{description}</p></div><button className="icon-button" aria-label="Закрыть" onClick={onCancel}><X size={18} /></button></div><div className="modal-actions"><Button onClick={onCancel}>Отмена</Button><Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>{confirmLabel}</Button></div></section></div>;
-}
-
+// Основное приложение
 function App() {
-  const [user, setUser] = useState(initial.user || null);
+  const [session, setSession] = useState(() => safeRead(SESSION_STORAGE));
+  const user = session?.user || null;
   const [page, setPage] = useState('overview');
-  const [text, setText] = useState(initial.text || '');
-  const [analysisSource, setAnalysisSource] = useState(initial.analysisSource || initial.text || '');
-  const [analysisId, setAnalysisId] = useState(initial.analysisId || null);
-  const [services, setServices] = useState(initial.services || []);
-  const [analysisReady, setAnalysisReady] = useState(initial.analysisReady ?? Boolean((initial.services || []).length));
-  const [drafts, setDrafts] = useState(initial.drafts || []);
-  const [ads, setAds] = useState(initial.ads || []);
-  const [results, setResults] = useState(initial.results || []);
-  const [totalPrepared, setTotalPrepared] = useState(initial.totalPrepared ?? ((initial.drafts || []).length + (initial.ads || []).length + (initial.results || []).length));
-  const [busy, setBusy] = useState('');
+  const [inputMode, setInputMode] = useState('text');
+
+  const [description, setDescription] = useState('');
+
+  const [records, setRecords] = useState([]);
+  const [fileName, setFileName] = useState('');
+  const [showResults, setShowResults] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+
+  const [drafts, setDrafts] = useState([]);
+  const [analyzing, setAnalyzing] = useState(false);
+
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [editItem, setEditItem] = useState(null);
-  const [confirm, setConfirm] = useState(null);
-  const [generatedItem, setGeneratedItem] = useState(null);
 
-  useEffect(() => { localStorage.setItem(STORAGE, JSON.stringify({ user, text, analysisSource, analysisId, services, analysisReady, drafts, ads, results, totalPrepared })); }, [user, text, analysisSource, analysisId, services, analysisReady, drafts, ads, results, totalPrepared]);
-  useEffect(() => { if (!toast) return undefined; const timer = window.setTimeout(() => setToast(''), 3000); return () => window.clearTimeout(timer); }, [toast]);
-  const navigate = next => { setPage(next); setError(''); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const notify = message => setToast(message);
-  const analyze = async () => {
-    if (text.trim().length < 12) { setError('Добавьте описание не короче 12 символов.'); return; }
-    setBusy('analyze'); setError('');
-    try { const submittedText = text; const response = await analyzeText(submittedText); setAnalysisSource(submittedText); setAnalysisId(response.analysisId); setServices(response.services); setAnalysisReady(true); setResults([]); notify(`Анализ завершён. Найдено направлений: ${response.services.length}`); }
-    catch (err) { setError(err.message || 'Не удалось выполнить анализ. Попробуйте ещё раз.'); }
-    finally { setBusy(''); }
+  const onAuth = async (mode, credentials) => {
+    const nextSession = await (mode === 'register'
+      ? register(credentials)
+      : login(credentials));
+    localStorage.setItem(SESSION_STORAGE, JSON.stringify(nextSession));
+    setSession(nextSession);
+    setError('');
   };
-  const generateSelected = async chosen => {
-    if (!chosen.length) { setError('Выберите хотя бы одно направление.'); return; }
-    setBusy('generate'); setError('');
-    try { const created = await generateDrafts(analysisId, chosen); setResults(prev => [...created, ...prev]); setTotalPrepared(value => value + created.length); setGeneratedItem(created.length === 1 ? created[0] : null); if (created.length > 1) setPage('generated'); notify(created.length === 1 ? 'Объявление сформировано' : `Сформировано объявлений: ${created.length}`); }
-    catch (err) { setError(err.message || 'Не удалось сформировать объявления.'); }
-    finally { setBusy(''); }
+
+  const onLogout = async () => {
+    const refreshToken = session?.refreshToken;
+    localStorage.removeItem(SESSION_STORAGE);
+    setSession({});
+    go('overview');
+    if (refreshToken) {
+      try {
+        await logout(refreshToken);
+      } catch (err) {
+        console.warn('Не удалось завершить сессию на сервере:', err);
+      }
+    }
   };
-  const generateOne = async service => {
-    if (!service.selected) setServices(prev => prev.map(item => item.id === service.id ? { ...item, selected: true } : item));
-    setBusy(`generate-${service.id}`); setError('');
-    try { const created = await generateDrafts(analysisId, [{ ...service, selected: true }]); setResults(prev => [...created, ...prev]); setTotalPrepared(value => value + created.length); setGeneratedItem(created[0] || null); notify('Объявление сформировано'); }
-    catch (err) { setError(err.message || 'Не удалось сформировать объявление.'); }
-    finally { setBusy(''); }
+
+  useEffect(() => {
+    if (!session?.accessToken) {
+      setDrafts([]);
+      return;
+    }
+    let active = true;
+    listDrafts(null, session.accessToken)
+      .then(items => { if (active) setDrafts(items); })
+      .catch(err => { if (active) setError(err.message); });
+    return () => { active = false; };
+  }, [session?.accessToken]);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+
+    const timer = setTimeout(
+      () => setToast(''),
+      3200
+    );
+
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const go = target => {
+    setPage(target);
+
+    if (target === 'overview') {
+      setShowResults(false);
+    }
+
+    setError('');
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    });
   };
-  const saveResult = item => { setDrafts(prev => prev.some(d => d.id === item.id) ? prev : [item, ...prev]); setResults(prev => prev.filter(d => d.id !== item.id)); notify('Объявление добавлено в черновики'); setGeneratedItem(null); };
-  const saveAllResults = () => { const existing = new Set(drafts.map(d => d.id)); const fresh = results.filter(d => !existing.has(d.id)); setDrafts(prev => [...fresh, ...prev]); setResults([]); navigate('drafts'); notify(fresh.length ? `Сохранено черновиков: ${fresh.length}` : 'Эти объявления уже сохранены'); };
-  const copyItem = async item => { try { const content = await exportDraft(item); await navigator.clipboard.writeText(content); notify('Объявление скопировано'); } catch { notify('Не удалось скопировать. Разрешите доступ к буферу обмена.'); } };
-  const saveEdit = async item => {
-    setBusy('edit'); setError('');
+
+  const notify = text => setToast(text);
+
+  const onAnalyze = async () => {
+    setError('');
+
+    const sourceRows = inputMode === 'text'
+      ? [{ id: '1', description: description.trim() }]
+      : records;
+
+    if (
+      !sourceRows.length ||
+      sourceRows.some(row => row.description.length < 12)
+    ) {
+      setError(
+        'Введите описание не короче 12 символов или загрузите корректный CSV.'
+      );
+      return;
+    }
+
+    setAnalyzing(true);
     try {
-      const saved = await updateDraft(item);
-      setDrafts(prev => prev.map(d => d.id === saved.id ? saved : d)); setAds(prev => prev.map(d => d.id === saved.id ? saved : d)); setResults(prev => prev.map(d => d.id === saved.id ? saved : d)); setGeneratedItem(current => current?.id === saved.id ? saved : current); setEditItem(null); notify('Изменения сохранены');
-    } catch (err) { setBusy(''); throw err; }
-    setBusy('');
+      const groups = [];
+      for (const row of sourceRows) {
+        const result = await analyzeText(row.description, MAIN_CATEGORY_ID, session.accessToken);
+        groups.push({
+          id: row.id,
+          description: row.description,
+          proposals: result.drafts.map(draft => ({ ...draft, key: draft.id })),
+        });
+      }
+      setAnalysis({ runId: crypto.randomUUID(), sourceType: inputMode, filename: fileName, groups });
+      setDrafts(await listDrafts(null, session.accessToken));
+      setShowResults(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      setError(err.message || 'Не удалось выполнить анализ.');
+      try { setDrafts(await listDrafts(null, session.accessToken)); } catch { /* Show the analysis error. */ }
+    } finally {
+      setAnalyzing(false);
+    }
   };
-  const removeItem = (item, from) => setConfirm({ title: 'Удалить объявление?', description: `«${item.title}» будет удалено ${from === 'ads' ? 'из ваших объявлений' : 'из черновиков'}.`, confirmLabel: 'Удалить', onConfirm: () => { if (from === 'ads') setAds(prev => prev.filter(d => d.id !== item.id)); else setDrafts(prev => prev.filter(d => d.id !== item.id)); setConfirm(null); notify('Объявление удалено'); } });
-  const moveItem = (item, from) => {
-    if (from === 'drafts') { setDrafts(prev => prev.filter(d => d.id !== item.id)); setAds(prev => prev.some(d => d.id === item.id) ? prev : [{ ...item, status: 'Готово', updatedAt: new Date().toISOString() }, ...prev]); notify('Объявление перенесено в мои объявления'); }
-    else { setAds(prev => prev.filter(d => d.id !== item.id)); setDrafts(prev => prev.some(d => d.id === item.id) ? prev : [{ ...item, status: 'Черновик', updatedAt: new Date().toISOString() }, ...prev]); notify('Объявление возвращено в черновики'); }
-  };
-  if (!user) return <AuthPage onLogin={setUser} />;
-  return <div className="app-shell">
-    <AppHeader user={user} activePage={page} counts={{ drafts: drafts.length, ads: ads.length }} onNavigate={navigate} onLogout={() => { setUser(null); navigate('overview'); }} />
-    <main className="main-content">
-      {error && page !== 'analysis' && page !== 'drafts' && page !== 'ads' && <div className="inline-alert" role="alert"><AlertCircle size={16} /><span>{error}</span><button aria-label="Закрыть сообщение" onClick={() => setError('')}><X size={15} /></button></div>}
-      {page === 'overview' && <OverviewPage user={user} drafts={drafts} ads={ads} totalPrepared={totalPrepared} navigate={navigate} />}
-      {page === 'analysis' && <AnalysisPage text={text} setText={setText} sourceText={analysisSource} services={services} setServices={setServices} onAnalyze={analyze} onGenerate={() => generateSelected(services.filter(service => service.selected))} onGenerateOne={(service, action) => action === 'delete' ? setServices(prev => prev.filter(item => item.id !== service.id)) : generateOne(service)} onNavigate={navigate} busy={busy} error={error} clearError={() => setError('')} analysisReady={analysisReady} generatedCount={results.length} />}
-      {(page === 'drafts' || page === 'ads') && <CollectionPage section={page} items={page === 'drafts' ? drafts : ads} onNavigate={navigate} onEdit={setEditItem} onCopy={copyItem} onRemove={item => removeItem(item, page)} onApprove={item => moveItem(item, page)} error={error} clearError={() => setError('')} />}
-      {page === 'generated' && <>
-        <PageHeading title="Объявления готовы" subtitle="Проверьте подготовленные тексты и выберите, что сохранить." action={<Button onClick={() => navigate('analysis')}><ArrowLeft size={15} /> К результатам анализа</Button>} />
-        {results.length ? <><div className="ad-list">{results.map((item, index) => <AdCard key={`${item.id}-${index}`} item={item} index={index} section="generated" onEdit={setEditItem} onCopy={copyItem} onRemove={ad => setResults(prev => prev.filter(d => d.id !== ad.id))} onApprove={saveResult} />)}</div><div className="bulk-action"><div><strong>{results.length} подготовлено</strong><small>Сохраните понравившиеся варианты в черновики.</small></div><Button variant="primary" onClick={saveAllResults}><Check size={16} /> Сохранить все черновики</Button></div></> : <EmptyState title="Нет новых объявлений" description="Сформируйте объявление для одной или нескольких услуг." action={<Button variant="primary" onClick={() => navigate('analysis')}>Вернуться к результатам</Button>} />}
-      </>}
-    </main>
-    {toast && <div className="toast" role="status"><CheckCircle2 size={17} />{toast}</div>}
-    {editItem && <EditModal item={editItem} busy={busy === 'edit'} onClose={() => setEditItem(null)} onSave={saveEdit} />}
-    {confirm && <ConfirmModal {...confirm} onCancel={() => setConfirm(null)} />}
-    {generatedItem && <GeneratedModal item={generatedItem} onClose={() => setGeneratedItem(null)} onEdit={() => { setEditItem(generatedItem); setGeneratedItem(null); }} onCopy={() => copyItem(generatedItem)} onSave={() => saveResult(generatedItem)} onReturn={() => { setGeneratedItem(null); navigate('analysis'); }} />}
-  </div>;
-}
 
-function GeneratedModal({ item, onClose, onEdit, onCopy, onSave, onReturn }) {
-  return <div className="modal-layer" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}><section className="modal generated-modal" role="dialog" aria-modal="true" aria-labelledby="generated-title"><div className="modal-head"><div><span className="success-mark"><Check size={17} /></span><h2 id="generated-title">Ваше объявление готово</h2><p>Публикация на площадке выполняется отдельно.</p></div><button className="icon-button" aria-label="Закрыть" onClick={onClose}><X size={18} /></button></div><div className="modal-body generated-body"><div><small>ЗАГОЛОВОК</small><strong>{item.title}</strong></div><div><small>КАТЕГОРИЯ</small><strong>{item.category || emptyMessage}{item.microcategory ? ` · ${item.microcategory}` : ''}</strong></div><div><small>ОПИСАНИЕ</small><p>{item.description}</p></div><button className="link-button" onClick={onEdit}><Pencil size={14} /> Редактировать текст</button></div><div className="modal-actions generated-actions"><Button onClick={onReturn}>К результатам анализа</Button><Button onClick={onCopy}><Copy size={15} /> Скопировать</Button><Button variant="primary" onClick={onSave}><FileText size={15} /> Сохранить в черновики</Button></div></section></div>;
+  const copy = async item => {
+    try {
+      await navigator.clipboard.writeText(
+        `${item.title || ''}\n\n${item.text || ''}`
+      );
+
+      notify('Текст скопирован');
+    } catch {
+      notify('Не удалось скопировать текст');
+    }
+  };
+
+  const deleteDraft = async item => {
+    if (!window.confirm('Удалить черновик?')) {
+      return;
+    }
+
+    try {
+      await removeDraft(item.id, session.accessToken);
+      setDrafts(prev => prev.filter(d => d.id !== item.id));
+      notify('Черновик удалён');
+    } catch (err) { setError(err.message); }
+  };
+
+  const saveEdit = async item => {
+    try {
+      const updated = await updateDraft(item, session.accessToken);
+      setDrafts(prev => prev.map(d => d.id === item.id ? updated : d));
+      setEditItem(null);
+      notify('Изменения сохранены');
+    } catch (err) { setError(err.message); }
+  };
+
+  if (!user) {
+    return <AuthPage onLogin={onAuth} connectionError={error} />;
+  }
+
+  return (
+    <div className="app-shell">
+      <AppHeader
+        user={{ ...user, name: `${user.firstName} ${user.lastName}`.trim() }}
+        page={page}
+        draftsCount={drafts.length}
+        go={go}
+        onLogout={onLogout}
+      />
+
+      <main className="main-content">
+        {page === 'overview' && !showResults && (
+          <OverviewPage
+            inputMode={inputMode}
+            setInputMode={setInputMode}
+            description={description}
+            setDescription={setDescription}
+            records={records}
+            setRecords={setRecords}
+            fileName={fileName}
+            setFileName={setFileName}
+            onAnalyze={onAnalyze}
+            error={error}
+            analyzing={analyzing}
+          />
+        )}
+
+        {page === 'overview' && showResults && analysis && (
+          <ResultPage
+            analysis={analysis}
+            onBack={() => setShowResults(false)}
+            onDrafts={() => go('drafts')}
+            onCopy={copy}
+          />
+        )}
+
+        {page === 'drafts' && (
+          <DraftsPage
+            items={drafts}
+            onNew={() => go('overview')}
+            onEdit={setEditItem}
+            onDelete={deleteDraft}
+            onCopy={copy}
+          />
+        )}
+      </main>
+
+      {toast && (
+        <div className="toast">
+          <CheckCircle2 size={17} />
+          {toast}
+        </div>
+      )}
+
+      {editItem && (
+        <EditModal
+          item={editItem}
+          onClose={() => setEditItem(null)}
+          onSave={saveEdit}
+        />
+      )}
+    </div>
+  );
 }
 
 export default App;

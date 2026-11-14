@@ -10,7 +10,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
-python scripts/train_cpu.py
+# Поместите готовый artifacts/cpu_char.joblib перед запуском.
 $env:DEEPSEEK_API_KEY = 'set locally, never commit'
 uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
@@ -23,7 +23,7 @@ The Docker image trains the CPU model during its build from the augmented traini
 
 ```powershell
 docker build -t avito-ai:local .
-docker run --rm -p 8001:8001 --env-file .env avito-ai:local
+docker run --rm -p 8001:8001 --env-file .env -v "${PWD}/artifacts:/service/artifacts:ro" avito-ai:local
 ```
 
 The optional semantic claim verifier is enabled with `CLAIM_VERIFIER_ENABLED=true`; it adds a DeepSeek call and rejects a draft if the reviewer call fails or reports unsupported claims. It defaults off until live cost and quality have been measured. Deterministic evidence and claim checks always run; neither is a guarantee of factual correctness.

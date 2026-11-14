@@ -64,7 +64,7 @@ The public parquet has 139 unique normalized descriptions, 69 repeated rows, and
 - FastAPI service in `ai-service/app/main.py`; health, classify, official draft, diagnostics, and metrics endpoints are implemented.
 - CPU fallback: char-boundary TF-IDF 3–5 grams (`min_df=2`, sublinear TF) plus balanced One-vs-Rest Logistic Regression (`C=200`). It uses only `description`, saves class order `[102,103,104,105,106]`, and threshold 0.45.
 - Local inference defaults to `LOCAL_CLASSIFIER_BACKEND=auto`: if ignored RuBERT weights and a working CUDA-enabled PyTorch/Transformers environment are present, it blends CPU and RuBERT probabilities 50/50 at threshold 0.475; otherwise it uses CPU. `cpu` forces the fallback; `rubert` selects the transformer alone. Docker contains no transformer weights and uses CPU. If loading fails, the service logs and falls back to CPU.
-- Rebuild the local ignored model artifact with `python scripts/train_cpu.py`. Docker trains the artifact during image build from the committed training data.
+- Current deployment expects a ready `ai-service/artifacts/cpu_char.joblib` mounted read-only. Docker no longer runs `train_cpu.py` during image build.
 - `CLASSIFIER_MODE=cpu|deepseek|hybrid`; DeepSeek classification is schema-checked. Hybrid uses CPU and requests DeepSeek only for uncertain predictions, falling back to CPU on provider error.
 - DeepSeek generation uses JSON mode, bounded retries, timeout, configurable output tokens, request cost budget, and one repair attempt. Invalid/missing copy becomes null. API errors are redacted.
 - Local evidence extraction and deterministic guardrails check category phrases, offsets, negation scope, source category exclusion, numeric and some claim types. These rules reduce obvious errors; they do not guarantee semantic truth.
@@ -109,7 +109,7 @@ Latest completed automated suite: 82 tests passed, 1 dependency deprecation warn
 - RuBERT-base and ensemble cross-validation runs are complete. The local optional ensemble is smoke-tested. A new human-annotated blind set is needed to confirm actual generalization and calibrate thresholds without reusing weak labels.
 - The most valuable next evaluation is a new human-annotated blind set. Existing organizer labels are weak and public-test data has already been inspected; further model tuning on them will not establish real generalization.
 - DeepSeek generation, token usage, cost, claim review, and RAG usefulness remain unmeasured because there is no provider key and the approved RAG corpus is empty. Keep those statuses honest until a budgeted live run and human copy rubric exist.
-- Docker image smoke was not run because the Docker daemon was unavailable on the original computer. Docker defaults to the small CPU model; the optional transformer is for an explicitly configured local environment.
+- The original handoff did not include a Docker smoke test. Current Docker Compose starts without model weights, reports `/health/ready` as 503 until a compatible CPU artifact is added, and does not include PyTorch.
 
 ## Useful commands
 
@@ -119,7 +119,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python scripts/audit_data.py
-python scripts/train_cpu.py
+# Add the prepared artifacts/cpu_char.joblib before starting the service.
 python scripts/train_rubert_base.py  # requires CUDA-enabled PyTorch and Transformers
 python -m pytest -q
 python scripts/evaluate_cpu.py

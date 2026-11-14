@@ -97,6 +97,9 @@ def test_blank_input_rejected(): assert client.post('/internal/v1/avito/drafts',
 def test_oversized_description_is_413(): assert client.post('/internal/v1/avito/drafts',json={'description':'x'*12001,'mcId':101}).status_code==413
 def test_extra_output_fields_not_in_schema(): assert set(client.get('/health/live').json())=={'status'}
 def test_forbidden_claim_guard(): assert valid_text('Кладём плитку',{'title':'Плитка','text':'Гарантия 5 лет'})==(None,None)
+def test_generated_copy_over_backend_limits_is_dropped():
+    assert valid_text('Укладываю плитку', {'title':'П'*256,'text':'Укладываю плитку'}, 103)==(None,None)
+    assert valid_text('Укладываю плитку', {'title':'Плиточные работы','text':'Укладываю плитку'+'а'*10000}, 103)==(None,None)
 def test_no_unsupported_separate_claim(): assert valid_text('Монтаж плитки',{'title':'Плиточные работы','text':'Можно заказать отдельно'})==(None,None)
 def test_unsupported_geography_guard(): assert valid_text('Укладываем плитку',{'title':'Плиточные работы','text':'Работаем в Москве'})==(None,None)
 def test_numeric_claim_must_be_in_category_evidence(): assert valid_text('Укладка плитки. Цена от 5000 рублей относится к сантехнике.',{'title':'Плиточные работы','text':'Цена от 5000 рублей'},103)==(None,None)
