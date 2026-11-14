@@ -245,7 +245,7 @@ function Field({ label, ...props }) {
 }
 
 // Вход и регистрация
-function AuthPage({ onLogin }) {
+function AuthPage({ onLogin, connectionError }) {
   const [mode, setMode] = useState('login');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -254,8 +254,9 @@ function AuthPage({ onLogin }) {
   const [repeat, setRepeat] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const submit = e => {
+  const submit = async e => {
     e.preventDefault();
     setError('');
 
@@ -271,22 +272,26 @@ function AuthPage({ onLogin }) {
       return setError('Укажите корректную почту.');
     }
 
-    if (password.length < 6) {
-      return setError('Пароль должен содержать минимум 6 символов.');
+    if (mode === 'register' && password.length < 8) {
+      return setError('Пароль должен содержать минимум 8 символов.');
     }
 
     if (mode === 'register' && password !== repeat) {
       return setError('Пароли не совпадают.');
     }
 
-    onLogin({
-      firstName: mode === 'register' ? firstName.trim() : '',
-      lastName: mode === 'register' ? lastName.trim() : '',
-      name: mode === 'register'
-        ? `${firstName.trim()} ${lastName.trim()}`
-        : email.split('@')[0],
-      email,
-    });
+    setLoading(true);
+    try {
+      await onLogin(mode, {
+        ...(mode === 'register' ? { firstName: firstName.trim(), lastName: lastName.trim() } : {}),
+        email: email.trim(),
+        password,
+      });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const switchMode = () => {
@@ -352,7 +357,7 @@ function AuthPage({ onLogin }) {
                 }
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="Не менее 6 символов"
+                placeholder="Не менее 8 символов"
                 required
               />
 
@@ -381,10 +386,10 @@ function AuthPage({ onLogin }) {
               />
             )}
 
-            {error && (
+          {(error || connectionError) && (
               <p className="form-error" role="alert">
                 <AlertCircle size={16} />
-                {error}
+                {error || connectionError}
               </p>
             )}
 
@@ -1028,7 +1033,7 @@ function DraftsPage({
           ? second - first
           : first - second;
       });
-  }, [items, query, category, sort]);
+  }, [items, query, category, sort, categories]);
 
   return (
     <>
@@ -1236,7 +1241,9 @@ function EditModal({
               Редактирование черновика
             </h2>
 
-            <p>{categoryFor(item.mcId)?.name}</p>
+            <p>
+              {categoryFor(item.mcId, categories)?.name}
+            </p>
           </div>
 
           <button
@@ -1297,10 +1304,10 @@ function EditModal({
 
 // Основное приложение
 function App() {
-  const [user, setUser] = useState(
-    initial.user || previous.user || null
-  );
-
+  const [session, setSession] = useState(() => safeRead(SESSION_STORAGE));
+  const sessionRef = useRef(session);
+  const user = session?.user || null;
+  const [categories, setCategories] = useState([]);
   const [page, setPage] = useState('overview');
   const [inputMode, setInputMode] = useState('text');
 
@@ -1389,6 +1396,7 @@ function App() {
       );
       return;
     }
+  };
 
     const nextAnalysis = makeDemoAnalysis(sourceRows, inputMode, fileName);
     const createdAt = new Date().toISOString();
@@ -1460,13 +1468,13 @@ function App() {
   };
 
   if (!user) {
-    return <AuthPage onLogin={setUser} />;
+    return <AuthPage onLogin={onAuth} connectionError={error} />;
   }
 
   return (
     <div className="app-shell">
       <AppHeader
-        user={user}
+        user={{ ...user, name: `${user.firstName} ${user.lastName}`.trim() }}
         page={page}
         draftsCount={drafts.length}
         go={go}
@@ -1522,6 +1530,7 @@ function App() {
       {editItem && (
         <EditModal
           item={editItem}
+          categories={categories}
           onClose={() => setEditItem(null)}
           onSave={saveEdit}
         />
