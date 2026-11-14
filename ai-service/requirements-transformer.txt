@@ -1,0 +1,2 @@
+# Install a CUDA-enabled PyTorch build separately using the official PyTorch selector.
+transformers==5.8.1

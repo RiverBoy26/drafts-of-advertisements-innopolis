@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "avito-ai-service"
+version = "0.2.0"
+requires-python = ">=3.11"
+dependencies = ["fastapi==0.115.12", "uvicorn[standard]==0.34.2", "pydantic==2.11.4", "httpx==0.28.1", "scikit-learn==1.6.1", "joblib==1.4.2", "numpy==2.2.5", "pandas==2.2.3", "pyarrow==19.0.1"]
+[project.optional-dependencies]
+test=["pytest==8.3.5"]
+[tool.pytest.ini_options]
+pythonpath=["."]
+testpaths=["tests"]
+[tool.setuptools.packages.find]
+include=["app*"]

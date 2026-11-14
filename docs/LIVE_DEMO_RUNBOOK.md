@@ -1,0 +1,3 @@
+# Live demo
+
+Windows PowerShell: `cd ai-service`; `py -3.12 -m venv .venv`; `.\.venv\Scripts\Activate.ps1`; `pip install -r requirements.txt`; `python scripts/train_cpu.py`; установить `DEEPSEEK_API_KEY` в окружении; `uvicorn app.main:app --host 0.0.0.0 --port 8001`. Проверить `GET /health/ready`, затем `curl.exe -X POST http://localhost:8001/internal/v1/avito/drafts -H "Content-Type: application/json" -d '{"description":"Делаем укладку плитки и монтаж розеток","mcId":101}'`. Для CPU-классификации без интернета используйте `/internal/v1/avito/classify`; заголовок и текст будут null по контракту демонстрации. Новые тексты обрабатываются текущим inference, canned responses нет. Измерения 10 новых примеров и стоимость пока `NOT_MEASURED`.
