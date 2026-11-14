@@ -31,6 +31,21 @@ def test_string_source_id_rejected():
 def test_evidence_scenarios(text,mc,expected): assert bool(evidence(text,mc)) is expected
 def test_exact_evidence_offsets():
     s="🙂 Делаем укладку плитки!"; ev=evidence(s,103)[0]; assert s[ev["start"]:ev["end"]]==ev["text"]
+def test_exception_phrases_exclude_only_the_named_category():
+    from app.main import explicitly_negated
+    assert not evidence("Делаю всё, кроме электричества",105)
+    assert explicitly_negated("Делаю всё, кроме электричества",105)
+    assert explicitly_negated("Выполняю работы за исключением электрики",105)
+    assert not evidence("Выполняю работы за исключением электрики",105)
+    assert explicitly_negated("Всё делаю, исключая электромонтаж",105)
+    assert evidence("Делаю всё, кроме сантехники, но укладываю плитку",103)
+    assert not explicitly_negated("Делаю всё, кроме сантехники, но укладываю плитку",103)
+    assert evidence("Делаю всё, кроме электричества, но монтирую розетки",105)
+    assert not explicitly_negated("Делаю всё, кроме электричества, но монтирую розетки",105)
+def test_classifier_drops_explicitly_negated_category():
+    class FakeClassifier:
+        def predict_proba(self,items):return [[.99,.99,.99,.99,.99]]
+    assert 105 not in predict("Делаю всё, кроме электричества",101,FakeClassifier(),.3)
 @pytest.mark.parametrize("text,mc,expected",[
     ("Делаю плитку, но не штукатурю",103,True),
     ("Делаю плитку, но не штукатурю",102,False),

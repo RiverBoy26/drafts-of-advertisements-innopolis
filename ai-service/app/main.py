@@ -70,15 +70,40 @@ def get_model():
     if not isinstance(data,dict) or tuple(data.get("class_ids",()))!=(102,103,104,105,106) or data.get("input_field")!="description":
         raise RuntimeError("CPU_MODEL_INCOMPATIBLE")
     return data
-try:MODEL=get_model(); MODEL_LOAD_ERROR=None
-except Exception:MODEL=None; MODEL_LOAD_ERROR="CPU_MODEL_LOAD_FAILED"; logger.error("CPU model artifact is missing or incompatible")
+def choose_local_classifier_backend(requested,transformer_path):
+    value=(requested or "auto").strip().lower()
+    if value=="auto":return "ensemble" if Path(transformer_path).is_dir() else "cpu"
+    return value if value in {"cpu","ensemble","rubert"} else "cpu"
+try:CPU_MODEL=get_model(); MODEL_LOAD_ERROR=None
+except Exception:CPU_MODEL=None; MODEL_LOAD_ERROR="CPU_MODEL_LOAD_FAILED"; logger.error("CPU model artifact is missing or incompatible")
+MODEL=CPU_MODEL
+ACTIVE_BACKEND="cpu-charwb"
+_rubert_path=os.getenv("RUBERT_MODEL_PATH",str(ROOT/"artifacts/rubert_base"))
+_local_backend=choose_local_classifier_backend(os.getenv("LOCAL_CLASSIFIER_BACKEND","auto"),_rubert_path)
+if _local_backend in {"rubert","ensemble"}:
+    try:
+        from app.transformer_classifier import ProbabilityBlend, RuBertClassifier
+        _rubert=RuBertClassifier(_rubert_path)
+        if _local_backend=="ensemble":
+            if CPU_MODEL is None:raise RuntimeError("CPU_MODEL_UNAVAILABLE_FOR_ENSEMBLE")
+            _classifier=ProbabilityBlend((CPU_MODEL["model"],_rubert),(.5,.5))
+            _threshold=.475
+        else:
+            _classifier=_rubert
+            _threshold=.475
+        MODEL={"model":_classifier,"class_ids":(102,103,104,105,106),"input_field":"description","threshold":_threshold,"version":f"local-{_local_backend}-v1"}
+        ACTIVE_BACKEND=f"{_local_backend}-{'cuda' if _rubert.device.type=='cuda' else 'cpu'}"
+    except Exception as exc:
+        if MODEL is None:MODEL_LOAD_ERROR="CLASSIFIER_UNAVAILABLE"
+        logger.error("Optional local transformer could not load; using CPU fallback (%s)",type(exc).__name__)
+        ACTIVE_BACKEND="cpu-fallback" if CPU_MODEL is not None else "unavailable"
 def predict(text,source,model=None,threshold=.35):
     m=model if model is not None else MODEL
     if m is None: raise RuntimeError("CPU_MODEL_UNAVAILABLE")
     if isinstance(m,dict): clf=m["model"]; class_ids=m["class_ids"]; threshold=m["threshold"]
     else: clf=m; class_ids=getattr(m,"class_ids",(102,103,104,105,106))
     scores=clf.predict_proba([norm(text)])[0]
-    return [mc for mc,s in zip(class_ids,scores) if s>=threshold and mc!=source]
+    return [mc for mc,s in zip(class_ids,scores) if s>=threshold and mc!=source and not explicitly_negated(text,mc)]
 PATTERNS={
 101:r"remont\w*.*pod\s+kluc|kompleksn\w* remont|kapitaln\w* remont",
 102:r"stukatur\w*|oshtukatur\w*|vyravniv\w* sten",
@@ -87,6 +112,37 @@ PATTERNS={
 105:r"elektr\w*|provodk\w*|kabel\w*|rozet\w*|vyklyuchatel\w*|elektromontazh\w*|osveshchen\w*|elektroset\w*",
 106:r"obo\w*|pokras\w*|poklei\w*|shpaklev\w*|shpatlev\w*|malyar\w*|gruntov\w*|shlifovan\w*"}
 NEG=r"(?:ne\s+(?:dela\w*|vypoln\w*|okazyv\w*|zanim\w*|bud\w*|predlag\w*|men\w*|menau\w*|uklad\w*|montir\w*|ustanav\w*|stukatur\w*|kle\w*|poklei\w*|spaklev\w*|spatlev\w*|slifov\w*|gruntov\w*|kras\w*)|ne\s+nashi|drug\w* podradcik|podradcik|podryadchik\s+ne\s+my|ran\w* delal|ran\w* zanim|bolshe\s+ne\s+(?:dela|prinima))"
+EXCEPTION=r"(?:krome|iskluc\w*|za\s+iskluc\w*)"
+EXCEPTION_FILLER=r"(?:vse\w*|rabot\w*|uslug\w*|remont\w*|po|uklad\w*|montaz\w*|ustanov\w*)"
+def _parts(text):
+    for clause in re.finditer(r"[^.!?;\n]+",text):
+        raw=clause.group(); transformed=latin(raw)
+        separators=list(re.finditer(r",|\b(?:i|no|a|zato|odnako|pri\s+etom)\b",transformed,re.I))
+        cursor=0
+        for sep in separators:
+            yield clause.start()+cursor,clause.start()+sep.start(),raw[cursor:sep.start()],transformed[cursor:sep.start()]
+            cursor=sep.end()
+        yield clause.start()+cursor,clause.start()+len(raw),raw[cursor:],transformed[cursor:]
+
+def _exception_spans(part,pat):
+    pattern=rf"\b{EXCEPTION}\b\s+(?:(?:{EXCEPTION_FILLER})\s+){{0,3}}(?:{pat})"
+    return [m.span() for m in re.finditer(pattern,part,re.I)]
+
+def explicitly_negated(text,mc):
+    """Return true only when every direct mention of a category is denied."""
+    pat=PATTERNS.get(mc)
+    if not pat:return False
+    found=False
+    for _,_,_,part in _parts(text):
+        mentions=list(re.finditer(pat,part,re.I))
+        if not mentions:continue
+        found=True
+        if re.search(NEG,part,re.I):continue
+        excluded=_exception_spans(part,pat)
+        if any(not any(left<=m.start() and m.end()<=right for left,right in excluded) for m in mentions):
+            return False
+    return found
+
 def evidence(text,mc):
     result=[]; pat=PATTERNS.get(mc)
     if not pat:return result
@@ -104,7 +160,10 @@ def evidence(text,mc):
             while right>left and raw[right-1].isspace(): right-=1
             if left>=right: continue
             start=base+left; end=base+right; part=transformed[left:right]
-            if not re.search(pat,part,re.I):continue
+            matches=list(re.finditer(pat,part,re.I))
+            if not matches:continue
+            excluded=_exception_spans(part,pat)
+            if not any(not any(left<=m.start() and m.end()<=right for left,right in excluded) for m in matches):continue
             if re.search(r"(?:^|\b)(?:vopros|sprashiv\w*|ishchu\s+mastera|nuzhen\s+master|ran\w*\s+delal|podradcik|podryadchik|ne\s+my|master\w*\s+po)(?:\b|$)",part,re.I):continue
             if re.search(NEG,part,re.I):continue
             if re.search(r"ispolzuy\w*.*kak\s+material|material\w*",part,re.I): continue
@@ -199,7 +258,7 @@ def live():return {"status":"live"}
 @app.get("/health/ready")
 def ready():
     ok=MODEL is not None
-    return JSONResponse(status_code=200 if ok else 503,content={"status":"ready" if ok else "not_ready","classifier":"cpu-char" if ok else (MODEL_LOAD_ERROR or "unavailable"),"generator":"deepseek-configured" if os.getenv("DEEPSEEK_API_KEY") else "degraded"})
+    return JSONResponse(status_code=200 if ok else 503,content={"status":"ready" if ok else "not_ready","classifier":ACTIVE_BACKEND if ok else (MODEL_LOAD_ERROR or "unavailable"),"generator":"deepseek-configured" if os.getenv("DEEPSEEK_API_KEY") else "degraded"})
 @app.middleware("http")
 async def protect_and_trace(request:Request,call_next):
     token=os.getenv("INTERNAL_API_TOKEN")
@@ -242,7 +301,7 @@ async def create_drafts(body:Input,request:Request):
     except RuntimeError:return JSONResponse(status_code=503,content={"error":{"code":"CLASSIFIER_UNAVAILABLE"}})
     classification_ms=round((time.perf_counter()-t)*1000,2)
     if not targets:
-        diag={"requestId":rid,"classifier":mode,"targetMcIds":[],"ragExampleIds":{},"timingsMs":{"classification":classification_ms,"total":round((time.perf_counter()-started)*1000,2)},"apiCalls":_PROVIDER_CALLS.get(),"usage":classification_usage,"estimatedCostUsd":estimate_cost(classification_usage),"priceProfile":os.getenv("PRICE_PROFILE"),"warnings":[]}
+        diag={"requestId":rid,"classifier":mode,"localModel":ACTIVE_BACKEND,"targetMcIds":[],"ragExampleIds":{},"timingsMs":{"classification":classification_ms,"total":round((time.perf_counter()-started)*1000,2)},"apiCalls":_PROVIDER_CALLS.get(),"usage":classification_usage,"estimatedCostUsd":estimate_cost(classification_usage),"priceProfile":os.getenv("PRICE_PROFILE"),"warnings":[]}
         app.state.diagnostics=getattr(app.state,"diagnostics",[])[-199:]+[diag]
         logger.info(json.dumps({k:v for k,v in diag.items() if k!="usage"},ensure_ascii=False))
         return {"drafts":[]}
@@ -297,7 +356,7 @@ async def create_drafts(body:Input,request:Request):
         drafts.append({"mcId":i,"title":title,"text":text})
     timing={"classification":classification_ms,"total":round((time.perf_counter()-started)*1000,2)}
     cost=estimate_cost(usage)
-    diag={"requestId":rid,"classifier":mode,"generator":os.getenv("DEEPSEEK_MODEL","deepseek-flash"),"claimVerifier":"enabled" if os.getenv("CLAIM_VERIFIER_ENABLED","false").lower()=="true" else "disabled","targetMcIds":targets,"ragExampleIds":rag_ids,"timingsMs":timing,"apiCalls":_PROVIDER_CALLS.get(),"usage":usage,"estimatedCostUsd":cost,"priceProfile":os.getenv("PRICE_PROFILE"),"warnings":warnings}
+    diag={"requestId":rid,"classifier":mode,"localModel":ACTIVE_BACKEND,"generator":os.getenv("DEEPSEEK_MODEL","deepseek-flash"),"claimVerifier":"enabled" if os.getenv("CLAIM_VERIFIER_ENABLED","false").lower()=="true" else "disabled","targetMcIds":targets,"ragExampleIds":rag_ids,"timingsMs":timing,"apiCalls":_PROVIDER_CALLS.get(),"usage":usage,"estimatedCostUsd":cost,"priceProfile":os.getenv("PRICE_PROFILE"),"warnings":warnings}
     app.state.diagnostics=getattr(app.state,"diagnostics",[])[-199:]+[diag]
     logger.info(json.dumps(diag,ensure_ascii=False))
     return {"drafts":drafts}

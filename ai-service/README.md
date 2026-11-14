@@ -1,6 +1,6 @@
 # Avito AI service
 
-Python 3.11+, FastAPI. Internal official-case API: `POST /internal/v1/avito/drafts`, `{description,mcId}` → `{drafts:[{mcId,title,text}]}`. CPU classifier is trained from organizer weak labels; generation calls DeepSeek only when `DEEPSEEK_API_KEY` is configured. RAG is optional and empty until approved examples are curated.
+Python 3.11+, FastAPI. Internal official-case API: `POST /internal/v1/avito/drafts`, `{description,mcId}` → `{drafts:[{mcId,title,text}]}`. The current CPU model is char-boundary TF-IDF (3–5 grams, min_df=2) with balanced One-vs-Rest Logistic Regression (C=200), trained from organizer weak labels. Five near-duplicate-grouped validation folds average micro-F1 0.9395 at threshold 0.45; see `docs/MODEL_SELECTION.md` for the measured limits and transformer research. Generation calls DeepSeek only when `DEEPSEEK_API_KEY` is configured. RAG is optional and empty until approved examples are curated.
 
 ## PowerShell
 
@@ -16,6 +16,8 @@ uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
 `pytest -q` requires no network/key/GPU. `GET /health/ready` reports CPU artifact state. `POST /internal/v1/avito/classify` returns category-only null drafts for CPU demonstration. Official endpoint fails 503 if classifier artifact is missing; if DeepSeek generation fails, preserves categories with null title/text. Costs require actual provider usage plus a configured external price profile; absent usage yields null cost. For labels/audit see repository `data/` and `docs/`.
+
+The optional local RuBERT-base experiment uses PyTorch and Transformers in a CUDA-enabled environment. Install the project requirements there, install a CUDA-enabled PyTorch build, then `pip install -r requirements-transformer.txt` and run `python scripts/train_rubert_base.py`; the output is stored under ignored `artifacts/rubert_base/`. `LOCAL_CLASSIFIER_BACKEND=auto` uses the 50/50 RuBERT+CPU blend (threshold 0.475) when local model weights exist, and otherwise uses CPU. Set it to `cpu` to force the fallback or `rubert` to use RuBERT alone. If loading the optional model fails, the service logs the issue and uses the CPU model. Docker does not include the weights, so it uses CPU. The GPU experiment is measured in `docs/EXPERIMENT_RESULTS.md`; its labels are still weak organizer labels.
 
 The Docker image trains the CPU model during its build from the included organizer training data, so it does not depend on a checked-in binary artifact:
 

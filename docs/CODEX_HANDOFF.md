@@ -62,7 +62,8 @@ The public parquet has 139 unique normalized descriptions, 69 repeated rows, and
 ## Current implementation
 
 - FastAPI service in `ai-service/app/main.py`; health, classify, official draft, diagnostics, and metrics endpoints are implemented.
-- CPU classifier: character TF-IDF 3–5 grams plus One-vs-Rest Logistic Regression. It uses only `description`, saves class order explicitly as `[102,103,104,105,106]`, and uses threshold 0.45.
+- CPU fallback: char-boundary TF-IDF 3–5 grams (`min_df=2`, sublinear TF) plus balanced One-vs-Rest Logistic Regression (`C=200`). It uses only `description`, saves class order `[102,103,104,105,106]`, and threshold 0.45.
+- Local inference defaults to `LOCAL_CLASSIFIER_BACKEND=auto`: if ignored RuBERT weights and a working CUDA-enabled PyTorch/Transformers environment are present, it blends CPU and RuBERT probabilities 50/50 at threshold 0.475; otherwise it uses CPU. `cpu` forces the fallback; `rubert` selects the transformer alone. Docker contains no transformer weights and uses CPU. If loading fails, the service logs and falls back to CPU.
 - Rebuild the local ignored model artifact with `python scripts/train_cpu.py`. Docker trains the artifact during image build from the committed training data.
 - `CLASSIFIER_MODE=cpu|deepseek|hybrid`; DeepSeek classification is schema-checked. Hybrid uses CPU and requests DeepSeek only for uncertain predictions, falling back to CPU on provider error.
 - DeepSeek generation uses JSON mode, bounded retries, timeout, configurable output tokens, request cost budget, and one repair attempt. Invalid/missing copy becomes null. API errors are redacted.
@@ -74,9 +75,11 @@ The public parquet has 139 unique normalized descriptions, 69 repeated rows, and
 
 ## Results already measured
 
-Reproducible run environment at the time: Windows 10, Python 3.12.10, AMD Ryzen 5 7520U (4 cores / 8 threads), integrated AMD Radeon only. There was no usable discrete GPU.
+Research environment: Windows, 16 GB RAM, 12 logical CPUs, NVIDIA GeForce RTX 3050 8 GB. CPU model environment uses Python 3.11; GPU environment uses PyTorch 2.11.0+cu126 and Transformers 5.8.1. GPU training was possible on this computer.
 
-The near-duplicate grouped validation connected normalized descriptions at char-TF-IDF cosine >=0.95, then used `GroupShuffleSplit(test_size=0.2, random_state=42)`: 3,928 train and 926 validation examples, 4,074 components, largest component 266. Cross-split maximum cosine was 0.9496; zero pairs were >=0.95, though 70 validation examples had a nearest train neighbor >=0.90.
+The five-fold near-duplicate grouped validation connected normalized descriptions at char-TF-IDF cosine >=0.95, then used `GroupShuffleSplit(test_size=0.2, random_state=42,7,21,101,2026)`. It used 4,854 unique texts and 4,074 components; per fold, all near duplicates remained on the same side. The seed-42 audit found cross-split maximum similarity 0.9496, zero pairs >=0.95, though 70 validation texts had a nearest train neighbor >=0.90.
+
+Earlier single-fold model comparisons (seed 42, retained as historical reference):
 
 | Classifier | Micro-F1 | Precision | Recall | Selected threshold |
 |---|---:|---:|---:|---:|
@@ -84,11 +87,13 @@ The near-duplicate grouped validation connected normalized descriptions at char-
 | Char TF-IDF | 0.9342 | 0.9252 | 0.9434 | 0.45 |
 | Word + char TF-IDF | 0.9319 | 0.9332 | 0.9306 | 0.50 |
 
-Selected: char TF-IDF, because it had the highest micro-F1 and recall on this grouped weak-label validation. These numbers measure agreement with organizer labels, not human or hidden-set accuracy.
+Current CPU baseline across five folds at fixed threshold 0.45: char_wb TF-IDF C=200, min_df=2 gives mean micro-F1 0.9395 (std 0.0033), macro-F1 0.9397, precision 0.9378, recall 0.9416, MAP 0.9801. LinearSVC C=1 reached 0.9382; ComplementNB 0.7987. Raw TF instead of sublinear TF dropped to 0.9259.
 
-Final char-model run on the public parquet: micro-F1 0.7982, precision 0.7018, recall 0.9254; class F1 102=0.7613, 103=0.6327, 104=0.8138, 105=0.8590, 106=0.8769. Warm local classifier latency p50/p95 was 8.28/16.52 ms per description, excluding generation and HTTP.
+`cointegrated/rubert-tiny2` averaged 0.9303 micro-F1 across the same grouped folds. `DeepPavlov/rubert-base-cased`, max length 512, effective batch 8, three epochs, averaged 0.9563 (std 0.0097), precision 0.9383, recall 0.9751, MAP 0.9619. A 50/50 CPU+RuBERT probability blend reached the best measured score: micro-F1 0.9624 (std 0.0052), macro-F1 0.9621, precision 0.9438, recall 0.9817, MAP 0.9833. Weight and threshold were selected on development folds; weak labels mean these results are not human or hidden-set accuracy.
 
-Latest completed automated suite: 77 tests passed, 1 warning. `compileall`, `git diff --check`, data audit, and RAG validation passed. A real local TestClient CPU sample returned categories 103 and 105; with the generator disabled, the official response contained null text/title and took 8.81 ms with zero provider calls.
+Public parquet diagnostics: previous CPU model micro-F1 0.7982; new CPU model 0.7918 (P=0.6939, R=0.9220); RuBERT+CPU ensemble 0.8211 (P=0.7235, R=0.9492). This set is not blind, and no model choice was made from it. CPU warm inference latency p50/p95 is 3.88/8.68 ms; ensemble GPU is 22.66/39.89 ms per description. Sample TestClient request returned `[103,105]` in 5.10 ms total with generation disabled and zero provider calls; GPU-backed TestClient also returned `[103,105]` and health Ready.
+
+Latest completed automated suite: 82 tests passed, 1 dependency deprecation warning. Python `compileall` and `git diff --check` passed. Final RuBERT weights are saved in local ignored `ai-service/artifacts/rubert_base/` (715 MB). GPU-backed service smoke passed with automatic backend selection; local weights are intentionally not in git.
 
 ## Not measured / known limitations
 
@@ -99,18 +104,12 @@ Latest completed automated suite: 77 tests passed, 1 warning. `compileall`, `git
 - Docker image smoke was not run because Docker daemon was not available on the original computer.
 - Deterministic evidence matching is deliberately conservative and incomplete; supported services outside its patterns can be missed. LLM verification is advisory, not proof.
 
-## Recommended next phase on a stronger computer
+## Remaining work
 
-Preserve the existing working baseline and compare controlled variants. Do not just increase model size or train longer.
-
-1. **Recreate and record environment.** Pull the branch, build a fresh Python environment from pinned requirements, check CPU/GPU visibility, record GPU model/VRAM, driver/runtime, CPU, RAM, Python and package versions. The current sklearn pipeline is CPU-only; GPU matters for transformer/embedding experiments, not this TF-IDF baseline.
-2. **Audit data before training.** Re-run `scripts/audit_data.py` and `scripts/audit_near_duplicates.py`. Add label-combination counts, duplicate group samples, empty/short/outlier descriptions, and conflicting near-duplicate labels. Inspect representative examples manually. Do not drop near duplicates blindly: some repeated texts can have different multi-labels or source context.
-3. **Protect evaluation.** Split by connected components of near duplicates. Use several fixed seeds for development comparisons, and reserve a new untouched manually checked set for final evaluation. Never tune thresholds or prompts against the public parquet after it has been inspected.
-4. **Compare label/data policies.** At minimum: current deduplicated baseline; exact-dedup with majority/union conflict handling; near-duplicate cluster-aware sampling; short/noisy text filtering; class-balanced and label-quality-filtered samples. Report retained rows, class/multilabel distribution, conflict rate, micro/macro/per-class F1, precision/recall, confidence calibration, and confusion examples.
-5. **Compare model families.** Keep the current char TF-IDF baseline; test word+char, calibrated logistic models, and one or more Russian-capable pretrained embedding/transformer classifiers if GPU is usable. Use the same group splits, report training and inference latency, VRAM/RAM, artifact size, and resource requirements. Do not assume GPU training improves quality.
-6. **Improve evidence and generation.** Build a fresh human-reviewed sample for category extraction and a blinded copy review set. Compare the current deterministic evidence, DeepSeek classifier, and hybrid mode. Measure unsupported-claim rate, category correctness, useful-fact retention, null rate, latency, tokens, and real USD cost. Only then decide whether semantic review or RAG earns its additional call/complexity.
-7. **Curate RAG honestly.** Have a person approve each example and its provenance. Keep source facts separate from approved style text. Add human-labeled relevance queries and test category isolation, near-duplicate filtering, fact leakage, and G0/G1/G2/G3 generation under blind evaluation.
-8. **Re-run integration checks.** `pytest -q`, `python scripts/train_cpu.py`, `python scripts/evaluate_cpu.py`, `python scripts/evaluate_public_test.py`, `python scripts/validate_rag.py`, `python scripts/evaluate_rag.py`, then a small gated live test with budget limits. Build and smoke-test Docker if the daemon is available.
+- RuBERT-base and ensemble cross-validation runs are complete. The local optional ensemble is smoke-tested. A new human-annotated blind set is needed to confirm actual generalization and calibrate thresholds without reusing weak labels.
+- The most valuable next evaluation is a new human-annotated blind set. Existing organizer labels are weak and public-test data has already been inspected; further model tuning on them will not establish real generalization.
+- DeepSeek generation, token usage, cost, claim review, and RAG usefulness remain unmeasured because there is no provider key and the approved RAG corpus is empty. Keep those statuses honest until a budgeted live run and human copy rubric exist.
+- Docker image smoke was not run because the Docker daemon was unavailable on the original computer. Docker defaults to the small CPU model; the optional transformer is for an explicitly configured local environment.
 
 ## Useful commands
 
@@ -121,6 +120,7 @@ py -3.12 -m venv .venv
 pip install -r requirements.txt
 python scripts/audit_data.py
 python scripts/train_cpu.py
+python scripts/train_rubert_base.py  # requires CUDA-enabled PyTorch and Transformers
 python -m pytest -q
 python scripts/evaluate_cpu.py
 python scripts/evaluate_public_test.py
