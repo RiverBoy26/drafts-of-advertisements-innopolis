@@ -52,6 +52,7 @@ jwt:
   refresh-token-ttl: 7d
 
 ml:
-  base-url: ${ML_BASE_URL:http://localhost:8000}
+  base-url: ${ML_BASE_URL:http://localhost:8001}
+  internal-api-token: ${ML_INTERNAL_API_TOKEN:}
   connect-timeout: ${ML_CONNECT_TIMEOUT:3s}
-  read-timeout: ${ML_READ_TIMEOUT:30s}
+  read-timeout: ${ML_READ_TIMEOUT:120s}

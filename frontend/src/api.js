@@ -1,7 +1,7 @@
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
 const API_PREFIX = '/api/v1';
 const ANALYSIS_POLL_INTERVAL_MS = 1000;
-const ANALYSIS_TIMEOUT_MS = 120000;
+const ANALYSIS_TIMEOUT_MS = 180000;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 

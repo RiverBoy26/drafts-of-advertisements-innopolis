@@ -10,7 +10,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 Copy-Item .env.example .env
-python scripts/train_cpu.py
+# Поместите готовый artifacts/cpu_char.joblib перед запуском.
 $env:DEEPSEEK_API_KEY = 'set locally, never commit'
 uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
@@ -19,11 +19,13 @@ uvicorn app.main:app --host 127.0.0.1 --port 8001
 
 The optional local RuBERT-base experiment uses PyTorch and Transformers in a CUDA-enabled environment. Install the project requirements there, install a CUDA-enabled PyTorch build, then `pip install -r requirements-transformer.txt` and run `python scripts/train_rubert_base.py`; the output is stored under ignored `artifacts/rubert_base/`. `LOCAL_CLASSIFIER_BACKEND=auto` uses the 50/50 RuBERT+CPU blend (threshold 0.475) when local model weights exist, and otherwise uses CPU. Set it to `cpu` to force the fallback or `rubert` to use RuBERT alone. If loading the optional model fails, the service logs the issue and uses the CPU model. Docker does not include the weights, so it uses CPU. The GPU experiment is measured in `docs/EXPERIMENT_RESULTS.md`; its labels are still weak organizer labels.
 
-The Docker image trains the CPU model during its build from the included organizer training data, so it does not depend on a checked-in binary artifact:
+The Docker image does not train a model. Place an existing compatible CPU artifact at `ai-service/artifacts/cpu_char.joblib`; root Compose mounts that directory read-only. Until the file is present, `/health/ready` returns 503. The current Docker image does not include PyTorch, so RuBERT weights alone are insufficient.
+
+The root Compose file starts this service on the internal address `http://ai-service:8001`, checks `/health/ready`, and shares `INTERNAL_API_TOKEN` with Java. Java and the frontend can start before the artifact is supplied; analyses report classifier unavailability until then. It defaults to CPU classification with `GENERATOR_PROVIDER=disabled`; enable DeepSeek generation by setting `GENERATOR_PROVIDER=deepseek` and `DEEPSEEK_API_KEY` in the root `.env`. Java accepts titles up to 255 characters and text up to 10,000; oversized generated copy is returned as paired nulls. The trained data covers source category 101, so predictions for other source categories are not validated and the model cannot suggest 101 as a target.
 
 ```powershell
 docker build -t avito-ai:local .
-docker run --rm -p 8001:8001 --env-file .env avito-ai:local
+docker run --rm -p 8001:8001 --env-file .env -v "${PWD}/artifacts:/service/artifacts:ro" avito-ai:local
 ```
 
 The optional semantic claim verifier is enabled with `CLAIM_VERIFIER_ENABLED=true`; it adds a DeepSeek call and rejects a draft if the reviewer call fails or reports unsupported claims. It defaults off until live cost and quality have been measured. Deterministic evidence and claim checks always run; neither is a guarantee of factual correctness.

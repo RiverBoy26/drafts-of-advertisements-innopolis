@@ -16,7 +16,7 @@ public class MlHttpConfig {
             @Value("${ml.base-url}") String baseUrl,
             @Value("${ml.connect-timeout:3s}")
             Duration connectTimeout,
-            @Value("${ml.read-timeout:30s}")
+            @Value("${ml.read-timeout:120s}")
             Duration readTimeout
     ) {
         SimpleClientHttpRequestFactory factory =
