@@ -23,7 +23,7 @@ The Docker image trains the CPU model during its build from the augmented traini
 
 ```powershell
 docker build -t avito-ai:local .
-docker run --rm -p 8001:8001 --env-file .env -v "${PWD}/artifacts:/service/artifacts:ro" avito-ai:local
+docker run --rm -p 8001:8001 --env-file .env -v "${PWD}/artifacts:/service/optional-artifacts:ro" avito-ai:local
 ```
 
 The optional semantic claim verifier is enabled with `CLAIM_VERIFIER_ENABLED=true`; it adds a DeepSeek call and rejects a draft if the reviewer call fails or reports unsupported claims. It defaults off until live cost and quality have been measured. Deterministic evidence and claim checks always run; neither is a guarantee of factual correctness.

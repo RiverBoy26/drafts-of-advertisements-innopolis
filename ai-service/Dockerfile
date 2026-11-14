@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu 
 COPY app ./app
 COPY data ./data
 COPY scripts ./scripts
+RUN mkdir -p /service/artifacts
 RUN python scripts/train_cpu_noise_candidate.py --count 1024
 EXPOSE 8001
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=12 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/ready', timeout=4)"

@@ -43,16 +43,16 @@ services:
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN}
       CLASSIFIER_MODE: ${CLASSIFIER_MODE:-cpu}
       LOCAL_CLASSIFIER_BACKEND: ${LOCAL_CLASSIFIER_BACKEND:-rubert}
-      RUBERT_MODEL_PATH: /service/artifacts/rubert_base
+      RUBERT_MODEL_PATH: /service/optional-artifacts/rubert_base
       GENERATOR_PROVIDER: ${GENERATOR_PROVIDER:-disabled}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_TIMEOUT_SECONDS: ${DEEPSEEK_TIMEOUT_SECONDS:-12}
       DEEPSEEK_MAX_RETRIES: ${DEEPSEEK_MAX_RETRIES:-1}
       CLAIM_VERIFIER_ENABLED: ${CLAIM_VERIFIER_ENABLED:-false}
       MAX_DESCRIPTION_CHARS: 10000
-      CPU_MODEL_PATH: /service/artifacts/cpu_char.joblib
+      CPU_MODEL_PATH: /service/artifacts/cpu_char_noise1024.joblib
     volumes:
-      - ./ai-service/artifacts:/service/artifacts:ro
+      - ./ai-service/artifacts:/service/optional-artifacts:ro
     restart: unless-stopped
 
   postgres:
