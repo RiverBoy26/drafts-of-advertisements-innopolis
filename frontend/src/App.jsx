@@ -6,9 +6,8 @@ import {
   Pencil, Search, ShieldCheck, Sparkles, Trash2, UploadCloud, UserRound,
   X, AlertCircle, Eye, EyeOff, SlidersHorizontal, Clock3, Plus,
 } from 'lucide-react';
+import { analyzeText, deleteDraft as removeDraft, listDrafts, login, logout, register, updateDraft } from './api.js';
 
-// Пока используется демонстрационный ответ. Backend позже вернёт
-// микрокатегорию (mcId) и текст подготовленного объявления.
 const MICROCATEGORIES = [
   { mcId: 101, name: 'Ремонт под ключ' },
   { mcId: 102, name: 'Штукатурные работы' },
@@ -19,8 +18,7 @@ const MICROCATEGORIES = [
 ];
 
 const MAIN_CATEGORY_ID = 101;
-const STORAGE = 'draftly-case-2026-v1';
-const LEGACY_STORAGE = 'draftly-v1';
+const SESSION_STORAGE = 'draftly-session-v1';
 
 const categoryFor = id =>
   MICROCATEGORIES.find(c => c.mcId === Number(id));
@@ -31,74 +29,6 @@ function safeRead(key) {
   } catch {
     return {};
   }
-}
-
-const initial = safeRead(STORAGE);
-const previous = safeRead(LEGACY_STORAGE);
-
-// Это именно примеры для проверки интерфейса,
-// а не результат анализа введённого текста.
-
-const DEMO_OUTPUT = [
-  {
-    mcId: 102,
-    title: 'Штукатурные работы',
-    text: 'Подготовка поверхностей и штукатурка стен перед чистовой отделкой.',
-  },
-  {
-    mcId: 103,
-    title: 'Укладка плитки',
-    text: 'Облицовка поверхностей керамической плиткой и затирка межплиточных швов.',
-  },
-  {
-    mcId: 104,
-    title: 'Сантехнические работы',
-    text: 'Установка раковин и смесителей, монтаж и замена сантехнических труб.',
-  },
-  {
-    mcId: 105,
-    title: 'Электромонтажные работы',
-    text: 'Установка розеток и выключателей, монтаж электропроводки.',
-  },
-  {
-    mcId: 106,
-    title: 'Малярные работы и поклейка обоев',
-    text: 'Покраска стен и потолков, подготовка поверхностей и поклейка обоев.',
-  },
-];
-
-const DEMO_COUNTS = [2, 3, 4, 2, 5, 3, 2, 4];
-
-function makeDemoAnalysis(rows, sourceType, filename) {
-  const runId = crypto.randomUUID();
-
-  return {
-    runId,
-    sourceType,
-    filename,
-    sourceMcId: MAIN_CATEGORY_ID,
-    groups: rows.map((row, rowIndex) => {
-      const count = DEMO_COUNTS[rowIndex % DEMO_COUNTS.length];
-      const offset = (rowIndex * 2) % DEMO_OUTPUT.length;
-
-      const proposals = Array.from({ length: count }, (_, idx) => {
-        const template = DEMO_OUTPUT[
-          (offset + idx) % DEMO_OUTPUT.length
-        ];
-
-        return {
-          ...template,
-          key: `${runId}:${rowIndex}:${template.mcId}`,
-        };
-      });
-
-      return {
-        id: row.id,
-        description: row.description,
-        proposals,
-      };
-    }),
-  };
 }
 
 // CSV-парсер. Поддерживает запятую и точку с запятой,
@@ -595,6 +525,7 @@ function OverviewPage({
   setFileName,
   onAnalyze,
   error,
+  analyzing,
 }) {
   const fileInput = useRef(null);
   const [drag, setDrag] = useState(false);
@@ -812,13 +743,13 @@ function OverviewPage({
             variant="primary"
             onClick={onAnalyze}
             disabled={
-              inputMode === 'text'
+              analyzing || (inputMode === 'text'
                 ? description.trim().length < 12
-                : records.length === 0
+                : records.length === 0)
             }
           >
             <Sparkles size={19} />
-            Анализировать
+            {analyzing ? 'Анализируем…' : 'Анализировать'}
             <ArrowRight size={17} />
           </Button>
         </div>
@@ -891,10 +822,11 @@ function ResultPage({ analysis, onBack, onDrafts, onCopy }) {
           </span>
 
           <div>
-            <strong>Черновики созданы</strong>
+            <strong>{total ? 'Черновики созданы' : 'Анализ завершён'}</strong>
             <p>
-              Все предложения автоматически добавлены
-              в раздел «Черновики».
+              {total
+                ? 'Все предложения автоматически добавлены в раздел «Черновики».'
+                : 'Подходящих категорий для новых черновиков не найдено.'}
             </p>
           </div>
         </div>
@@ -1033,7 +965,7 @@ function DraftsPage({
           ? second - first
           : first - second;
       });
-  }, [items, query, category, sort, categories]);
+  }, [items, query, category, sort]);
 
   return (
     <>
@@ -1242,7 +1174,7 @@ function EditModal({
             </h2>
 
             <p>
-              {categoryFor(item.mcId, categories)?.name}
+              {categoryFor(item.mcId)?.name}
             </p>
           </div>
 
@@ -1305,51 +1237,58 @@ function EditModal({
 // Основное приложение
 function App() {
   const [session, setSession] = useState(() => safeRead(SESSION_STORAGE));
-  const sessionRef = useRef(session);
   const user = session?.user || null;
-  const [categories, setCategories] = useState([]);
   const [page, setPage] = useState('overview');
   const [inputMode, setInputMode] = useState('text');
 
-  const [description, setDescription] = useState(
-    initial.description || ''
-  );
+  const [description, setDescription] = useState('');
 
   const [records, setRecords] = useState([]);
   const [fileName, setFileName] = useState('');
   const [showResults, setShowResults] = useState(false);
   const [analysis, setAnalysis] = useState(null);
 
-  // Старые объявления не теряются.
-  // Теперь они также считаются черновиками.
-  const [drafts, setDrafts] = useState(() => {
-    const saved = [
-      ...(initial.drafts || []),
-      ...(initial.ads || []),
-    ];
-
-    return [
-      ...new Map(
-        saved.map(item => [item.id, item])
-      ).values(),
-    ];
-  });
+  const [drafts, setDrafts] = useState([]);
+  const [analyzing, setAnalyzing] = useState(false);
 
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [editItem, setEditItem] = useState(null);
 
+  const onAuth = async (mode, credentials) => {
+    const nextSession = await (mode === 'register'
+      ? register(credentials)
+      : login(credentials));
+    localStorage.setItem(SESSION_STORAGE, JSON.stringify(nextSession));
+    setSession(nextSession);
+    setError('');
+  };
+
+  const onLogout = async () => {
+    const refreshToken = session?.refreshToken;
+    localStorage.removeItem(SESSION_STORAGE);
+    setSession({});
+    go('overview');
+    if (refreshToken) {
+      try {
+        await logout(refreshToken);
+      } catch (err) {
+        console.warn('Не удалось завершить сессию на сервере:', err);
+      }
+    }
+  };
+
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE,
-      JSON.stringify({
-        user,
-        description,
-        drafts,
-        ads: [],
-      })
-    );
-  }, [user, description, drafts]);
+    if (!session?.accessToken) {
+      setDrafts([]);
+      return;
+    }
+    let active = true;
+    listDrafts(null, session.accessToken)
+      .then(items => { if (active) setDrafts(items); })
+      .catch(err => { if (active) setError(err.message); });
+    return () => { active = false; };
+  }, [session?.accessToken]);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -1379,8 +1318,7 @@ function App() {
 
   const notify = text => setToast(text);
 
-  // Демонстрационный анализ и автоматическое создание черновиков.
-  const onAnalyze = () => {
+  const onAnalyze = async () => {
     setError('');
 
     const sourceRows = inputMode === 'text'
@@ -1396,40 +1334,28 @@ function App() {
       );
       return;
     }
-  };
 
-    const nextAnalysis = makeDemoAnalysis(sourceRows, inputMode, fileName);
-    const createdAt = new Date().toISOString();
-
-    const newDrafts = nextAnalysis.groups.flatMap(group =>
-      group.proposals.map(proposal => ({
-        id: crypto.randomUUID(),
-        proposalKey: proposal.key,
-        analysisId: nextAnalysis.runId,
-        sourceId: inputMode === 'csv' ? group.id : null,
-        mcId: proposal.mcId,
-        title: proposal.title,
-        text: proposal.text,
-        createdAt,
-      }))
-    );
-
-    setAnalysis(nextAnalysis);
-    setDrafts(prev => {
-      const updated = [...newDrafts, ...prev];
-      // Сохраняем сразу, чтобы черновики не пропали после обновления страницы.
-      try {
-        localStorage.setItem(STORAGE, JSON.stringify({
-          user, description, drafts: updated, ads: [],
-        }));
-      } catch (e) {
-        console.warn('Не удалось сохранить черновики в браузере:', e);
+    setAnalyzing(true);
+    try {
+      const groups = [];
+      for (const row of sourceRows) {
+        const result = await analyzeText(row.description, MAIN_CATEGORY_ID, session.accessToken);
+        groups.push({
+          id: row.id,
+          description: row.description,
+          proposals: result.drafts.map(draft => ({ ...draft, key: draft.id })),
+        });
       }
-      return updated;
-    });
-    setShowResults(true);
-
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+      setAnalysis({ runId: crypto.randomUUID(), sourceType: inputMode, filename: fileName, groups });
+      setDrafts(await listDrafts(null, session.accessToken));
+      setShowResults(true);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      setError(err.message || 'Не удалось выполнить анализ.');
+      try { setDrafts(await listDrafts(null, session.accessToken)); } catch { /* Show the analysis error. */ }
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const copy = async item => {
@@ -1444,27 +1370,25 @@ function App() {
     }
   };
 
-  const deleteDraft = item => {
+  const deleteDraft = async item => {
     if (!window.confirm('Удалить черновик?')) {
       return;
     }
 
-    setDrafts(prev =>
-      prev.filter(d => d.id !== item.id)
-    );
-
-    notify('Черновик удалён');
+    try {
+      await removeDraft(item.id, session.accessToken);
+      setDrafts(prev => prev.filter(d => d.id !== item.id));
+      notify('Черновик удалён');
+    } catch (err) { setError(err.message); }
   };
 
-  const saveEdit = item => {
-    setDrafts(prev =>
-      prev.map(d =>
-        d.id === item.id ? item : d
-      )
-    );
-
-    setEditItem(null);
-    notify('Изменения сохранены');
+  const saveEdit = async item => {
+    try {
+      const updated = await updateDraft(item, session.accessToken);
+      setDrafts(prev => prev.map(d => d.id === item.id ? updated : d));
+      setEditItem(null);
+      notify('Изменения сохранены');
+    } catch (err) { setError(err.message); }
   };
 
   if (!user) {
@@ -1478,10 +1402,7 @@ function App() {
         page={page}
         draftsCount={drafts.length}
         go={go}
-        onLogout={() => {
-          setUser(null);
-          go('overview');
-        }}
+        onLogout={onLogout}
       />
 
       <main className="main-content">
@@ -1497,6 +1418,7 @@ function App() {
             setFileName={setFileName}
             onAnalyze={onAnalyze}
             error={error}
+            analyzing={analyzing}
           />
         )}
 
@@ -1530,7 +1452,6 @@ function App() {
       {editItem && (
         <EditModal
           item={editItem}
-          categories={categories}
           onClose={() => setEditItem(null)}
           onSave={saveEdit}
         />
