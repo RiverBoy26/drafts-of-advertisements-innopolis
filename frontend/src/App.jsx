@@ -1,7 +1,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeft, ArrowRight, Check, CheckCircle2, ChevronDown, CircleHelp,
+  ArrowRight, Check, CheckCircle2, ChevronDown, CircleHelp,
   Copy, FileSpreadsheet, FileText, House, LogOut, Menu, PanelLeftClose,
   Pencil, Search, ShieldCheck, Sparkles, Trash2, UploadCloud, UserRound,
   X, AlertCircle, Eye, EyeOff, SlidersHorizontal, Clock3, Plus,
@@ -21,6 +21,15 @@ const MAIN_CATEGORY_ID = 101;
 
 const categoryFor = id =>
   MICROCATEGORIES.find(c => c.mcId === Number(id));
+
+const pluralRu = (count, one, few, many) => {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+};
 
 // CSV-парсер. Поддерживает запятую и точку с запятой,
 // текст в кавычках и переносы строк.
@@ -756,212 +765,10 @@ function OverviewPage({
   );
 }
 
-// Результаты анализа в разделе «Обзор»
-
-function SourcePreviewModal({ preview, onClose }) {
-  useEffect(() => {
-    const closeOnEscape = event => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', closeOnEscape);
-    return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [onClose]);
-
-  return (
-    <div
-      className="modal-layer"
-      onMouseDown={event => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        className="modal source-preview-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="source-preview-title"
-      >
-        <div className="modal-head">
-          <h2 id="source-preview-title">Объявление {preview.number}</h2>
-          <button type="button" className="icon-button" aria-label="Закрыть" onClick={onClose}>
-            <X size={20} />
-          </button>
-        </div>
-        <p className="source-preview-text">{preview.description}</p>
-      </section>
-    </div>
-  );
-}
-
-function ResultPage({ analysis, onBack, onDrafts, onCopy }) {
-  const [sourcePreview, setSourcePreview] = useState(null);
-  const total = analysis.groups.reduce(
-    (sum, group) => sum + group.proposals.length,
-    0
-  );
-
-  const isBatch = analysis.sourceType === 'csv';
-
-  const renderProposal = (proposal, number) => (
-    <article className="result-draft-row" key={proposal.key}>
-      <span className="result-draft-index" aria-hidden="true">
-        {String(number).padStart(2, '0')}
-      </span>
-
-      <div className="result-draft-body">
-        <span className="draft-category">
-          {categoryFor(proposal.mcId)?.name || 'Категория'}
-        </span>
-        <h3>{proposal.title}</h3>
-        <p>{proposal.text}</p>
-      </div>
-
-      <button
-        type="button"
-        className="draft-copy"
-        onClick={() => onCopy(proposal)}
-        title="Скопировать текст объявления"
-      >
-        <Copy size={16} />
-        <span>Копировать</span>
-      </button>
-    </article>
-  );
-
-  return (
-    <>
-      <div className="page-heading result-page-heading">
-        <button
-          className="back-link"
-          type="button"
-          onClick={onBack}
-        >
-          <ArrowLeft size={17} />
-          К вводу данных
-        </button>
-        <h1>Результаты анализа</h1>
-      </div>
-
-      <div className="result-dashboard">
-        <div className="result-success">
-          <span className="result-success-icon">
-            <CheckCircle2 size={24} />
-          </span>
-
-          <div>
-            <strong>{total ? 'Черновики созданы' : 'Анализ завершён'}</strong>
-            <p>
-              {total
-                ? 'Все предложения автоматически добавлены в раздел «Черновики».'
-                : 'Подходящих категорий для новых черновиков не найдено.'}
-            </p>
-          </div>
-        </div>
-
-        <div className="result-stat">
-          <span>Обработано объявлений</span>
-          <strong>{analysis.groups.length}</strong>
-        </div>
-
-        <div className="result-stat result-stat-accent">
-          <span>Создано черновиков</span>
-          <strong>{total}</strong>
-        </div>
-      </div>
-
-      <div className="result-actions">
-        <div>
-          <h2>Готовые черновики</h2>
-          <p>
-            {isBatch
-              ? 'По исходным объявлениям'
-              : 'Для вашего объявления'}
-          </p>
-        </div>
-
-        <Button
-          variant="primary"
-          type="button"
-          onClick={onDrafts}
-        >
-          <FileText size={17} />
-          Открыть черновики
-          <ArrowRight size={16} />
-        </Button>
-      </div>
-
-      <div className="analysis-group-list">
-        {analysis.groups.map((group, index) => (
-          isBatch ? (
-            <details
-              className="analysis-group"
-              key={`${analysis.runId}-${index}`}
-              open={index === 0 ? true : undefined}
-            >
-              <summary className="analysis-group-summary">
-                <span className="analysis-group-title">
-                  <span className="analysis-group-number">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
-                  <strong>Объявление {index + 1}</strong>
-                  <button
-                    type="button"
-                    className="text-link source-preview-link"
-                    onClick={event => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setSourcePreview({ number: index + 1, description: group.description });
-                    }}
-                  >
-                    Показать
-                  </button>
-                </span>
-
-                <span className="analysis-group-right">
-                  <span className="analysis-group-count">
-                    {group.proposals.length}{' '}
-                    {group.proposals.length % 10 === 1 && group.proposals.length % 100 !== 11
-                      ? 'черновик'
-                      : group.proposals.length % 10 >= 2 && group.proposals.length % 10 <= 4 && (group.proposals.length % 100 < 12 || group.proposals.length % 100 > 14)
-                        ? 'черновика'
-                        : 'черновиков'}
-                  </span>
-
-                  <ChevronDown
-                    size={19}
-                    className="analysis-chevron"
-                  />
-                </span>
-              </summary>
-
-              <div className="analysis-group-body">
-                {group.proposals.map((proposal, proposalIndex) =>
-                  renderProposal(proposal, proposalIndex + 1)
-                )}
-              </div>
-            </details>
-          ) : (
-            <div
-              className="analysis-group analysis-group-single"
-              key={`${analysis.runId}-${index}`}
-            >
-              {group.proposals.map((proposal, proposalIndex) =>
-                renderProposal(proposal, proposalIndex + 1)
-              )}
-            </div>
-          )
-        ))}
-      </div>
-      {sourcePreview && (
-        <SourcePreviewModal preview={sourcePreview} onClose={() => setSourcePreview(null)} />
-      )}
-    </>
-  );
-}
-
-
 // Страница «Черновики»
 function DraftsPage({
   items,
+  analysis,
   onNew,
   onEdit,
   onDelete,
@@ -971,72 +778,85 @@ function DraftsPage({
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [sort, setSort] = useState('newest');
-  const [sourcePreview, setSourcePreview] = useState(null);
 
-  const sourceNumbers = useMemo(() => {
-    const numbers = new Map();
-    [...items]
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-      .forEach(item => {
-        const key = item.sourceAdId || item.analysisId || item.id;
-        if (!numbers.has(key)) numbers.set(key, numbers.size + 1);
-      });
-    return numbers;
-  }, [items]);
-
-  const filtered = useMemo(() => {
-    return items
-      .filter(item => {
-        const haystack = `${
-          item.title || ''
-        } ${
-          item.text || ''
-        } ${
-          categoryFor(item.mcId)?.name || ''
-        } ${
-          item.sourceId || ''
-        } ${
-          item.sourceDescription || ''
-        }`.toLowerCase();
-
-        return (
-          haystack.includes(query.toLowerCase()) &&
-          (
-            category === 'all' ||
-            Number(category) === Number(item.mcId)
-          )
-        );
-      })
-      .sort((a, b) => {
-        const first = new Date(
-          a.updatedAt || a.createdAt
-        ).getTime();
-
-        const second = new Date(
-          b.updatedAt || b.createdAt
-        ).getTime();
-
-        return sort === 'newest'
-          ? second - first
-          : first - second;
-      });
-  }, [items, query, category, sort]);
-
-  const groups = useMemo(() => {
+  // Начинаем с исходных объявлений последнего анализа. Благодаря этому
+  // видны даже объявления, для которых не удалось найти ни одной категории.
+  const allGroups = useMemo(() => {
     const bySource = new Map();
-    filtered.forEach(item => {
-      const key = item.sourceAdId || item.analysisId || item.id;
-      if (!bySource.has(key)) {
-        bySource.set(key, {
-          number: sourceNumbers.get(key),
-          description: item.sourceDescription,
-          drafts: [],
-        });
-      }
-      bySource.get(key).drafts.push(item);
+
+    (analysis?.groups || []).forEach((source, index) => {
+      bySource.set(source.sourceKey, {
+        key: source.sourceKey,
+        number: index + 1,
+        sourceId: source.id,
+        description: source.description,
+        hadGeneratedDrafts: (source.proposals || []).length > 0,
+        drafts: [],
+      });
     });
+
+    [...items]
+      .sort((a, b) => (Date.parse(a.createdAt) || 0) - (Date.parse(b.createdAt) || 0))
+      .forEach(item => {
+        const key = item.sourceKey || item.sourceAdId || item.analysisId || item.id;
+
+        if (!bySource.has(key)) {
+          bySource.set(key, {
+            key,
+            number: item.sourceIndex || bySource.size + 1,
+            sourceId: item.sourceId || null,
+            description: item.sourceDescription || '',
+            hadGeneratedDrafts: true,
+            drafts: [],
+          });
+        }
+
+        const group = bySource.get(key);
+        if (!group.description && item.sourceDescription) {
+          group.description = item.sourceDescription;
+        }
+        group.drafts.push(item);
+      });
+
     return [...bySource.values()];
-  }, [filtered, sourceNumbers]);
+  }, [items, analysis]);
+
+  const foundCategories = useMemo(() => {
+    return allGroups.reduce((sum, group) => {
+      const ids = group.drafts
+        .map(draft => Number(draft.mcId))
+        .filter(Number.isFinite);
+      return sum + new Set(ids).size;
+    }, 0);
+  }, [allGroups]);
+
+  const visibleGroups = useMemo(() => {
+    const term = query.trim().toLowerCase();
+
+    return allGroups
+      .map(group => {
+        const sourceMatches = !term ||
+          `${group.description} ${group.sourceId || ''}`.toLowerCase().includes(term);
+
+        const drafts = group.drafts.filter(item => {
+          if (category !== 'all' && Number(category) !== Number(item.mcId)) {
+            return false;
+          }
+          if (sourceMatches) return true;
+          const content = `${item.title || ''} ${item.text || ''} ${categoryFor(item.mcId)?.name || ''}`;
+          return content.toLowerCase().includes(term);
+        });
+
+        if (category !== 'all' && drafts.length === 0) return null;
+        if (term && !sourceMatches && drafts.length === 0) return null;
+        return { ...group, drafts };
+      })
+      .filter(Boolean)
+      .sort((a, b) => sort === 'newest' ? b.number - a.number : a.number - b.number);
+  }, [allGroups, query, category, sort]);
+
+  const visibleDraftsCount = visibleGroups.reduce((sum, group) => sum + group.drafts.length, 0);
+  const processedCount = analysis ? analysis.groups.length : allGroups.length;
 
   return (
     <>
@@ -1044,21 +864,31 @@ function DraftsPage({
         <h1>Черновики</h1>
       </div>
 
+      <div className="drafts-summary" aria-label="Итоги анализа">
+        <div className="drafts-summary-card">
+          <span>Обработано объявлений</span>
+          <strong>{processedCount}</strong>
+        </div>
+        <div className="drafts-summary-card">
+          <span>Найдено категорий</span>
+          <strong>{foundCategories}</strong>
+        </div>
+        <div className="drafts-summary-card">
+          <span>Создано черновиков</span>
+          <strong>{items.length}</strong>
+        </div>
+      </div>
+
       <div className="collection-toolbar">
         <label className="collection-search">
           <Search size={19} />
-
           <input
             placeholder="Поиск по черновикам"
             value={query}
             onChange={e => setQuery(e.target.value)}
           />
-
           {query && (
-            <button
-              aria-label="Очистить"
-              onClick={() => setQuery('')}
-            >
+            <button type="button" aria-label="Очистить поиск" onClick={() => setQuery('')}>
               <X size={16} />
             </button>
           )}
@@ -1066,25 +896,20 @@ function DraftsPage({
 
         <div className="collection-select">
           <SlidersHorizontal size={17} />
-
           <select
             value={category}
             onChange={e => setCategory(e.target.value)}
             aria-label="Микрокатегория"
           >
             <option value="all">Все категории</option>
-
             {MICROCATEGORIES.map(c => (
-              <option key={c.mcId} value={c.mcId}>
-                {c.name}
-              </option>
+              <option key={c.mcId} value={c.mcId}>{c.name}</option>
             ))}
           </select>
         </div>
 
         <div className="collection-select">
           <Clock3 size={17} />
-
           <select
             aria-label="Сортировка"
             value={sort}
@@ -1101,105 +926,104 @@ function DraftsPage({
           onClick={onDeleteAll}
           disabled={!items.length}
         >
-          <Trash2 size={16} />
-          Удалить все черновики
+          <Trash2 size={16} /> Удалить все черновики
         </Button>
       </div>
 
       <p className="results-count">
-        Найдено: {filtered.length}
+        Показано исходных объявлений: {visibleGroups.length} · Черновиков: {visibleDraftsCount}
       </p>
 
-      {!filtered.length ? (
+      {!visibleGroups.length ? (
         <div className="empty-page empty-inline">
           <FileText size={32} />
-
-          <h3>
-            {items.length
-              ? 'Ничего не найдено'
-              : 'Пока нет черновиков'}
-          </h3>
-
-          <p>
-            {items.length
-              ? 'Попробуйте изменить условия поиска.'
-              : 'После анализа здесь появятся сохранённые объявления.'}
+          <h3>{allGroups.length ? 'Ничего не найдено' : 'Пока нет черновиков'}</h3>
+          <p>{allGroups.length
+            ? 'Попробуйте изменить условия поиска.'
+            : 'После анализа здесь появятся исходные объявления и готовые черновики.'}
           </p>
-
-          <Button
-            onClick={
-              items.length
-                ? () => {
-                    setQuery('');
-                    setCategory('all');
-                  }
-                : onNew
-            }
+          <Button onClick={allGroups.length
+            ? () => { setQuery(''); setCategory('all'); }
+            : onNew}
           >
-            {items.length
-              ? 'Сбросить фильтры'
-              : 'Создать объявление'}
+            {allGroups.length ? 'Сбросить фильтры' : 'Новый анализ'}
           </Button>
         </div>
       ) : (
+        <div className="source-group-list">
+          {visibleGroups.map(group => {
+            const categoryIds = [...new Set(
+              group.drafts.map(item => Number(item.mcId)).filter(Number.isFinite)
+            )];
 
-        <div className="analysis-group-list">
-          {groups.map(group => (
-            <details className="analysis-group" key={group.number}>
-              <summary className="analysis-group-summary">
-                <span className="analysis-group-title">
-                  <span className="analysis-group-number">
+            return (
+              <section className="source-group" key={group.key}>
+                <div className="source-group-heading">
+                  <span className="source-group-number">
                     {String(group.number).padStart(2, '0')}
                   </span>
-                  <strong>Объявление {group.number}</strong>
-                  <button
-                    type="button"
-                    className="text-link source-preview-link"
-                    onClick={event => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setSourcePreview({ number: group.number, description: group.description });
-                    }}
-                  >
-                    Показать
-                  </button>
-                </span>
-                <ChevronDown size={19} className="analysis-chevron" />
-              </summary>
-              <div className="analysis-group-body">
-                {group.drafts.map(item => (
-                  <article className="listing" key={item.id}>
-                    <h3>{item.title || categoryFor(item.mcId)?.name || 'Без заголовка'}</h3>
-                    <p className="listing-category">
-                      Категория: {categoryFor(item.mcId)?.name || 'Не определена'}
-                    </p>
-                    <p className="listing-text">
-                      {item.text || 'Описание пока не заполнено.'}
-                    </p>
-                    <div className="listing-actions">
-                      <button type="button" onClick={() => onEdit(item)}>
-                        <Pencil size={16} />
-                        Редактировать
-                      </button>
-                      <button type="button" onClick={() => onCopy(item)}>
-                        <Copy size={16} />
-                        Скопировать
-                      </button>
-                      <button type="button" className="delete-link" onClick={() => onDelete(item)}>
-                        <Trash2 size={16} />
-                        Удалить
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </details>
-          ))}
-        </div>
+                  <div className="source-group-heading-text">
+                    <h2>Объявление {group.number}</h2>
+                    {group.sourceId != null && (
+                      <small>ID исходного объявления: {group.sourceId}</small>
+                    )}
+                  </div>
+                  <span className="source-group-count">
+                    {categoryIds.length} {pluralRu(categoryIds.length, 'категория', 'категории', 'категорий')}
+                  </span>
+                </div>
 
-      )}
-      {sourcePreview && (
-        <SourcePreviewModal preview={sourcePreview} onClose={() => setSourcePreview(null)} />
+                <div className="source-group-original">
+                  <span className="source-group-label">Исходное объявление</span>
+                  <p>{group.description || 'Исходный текст не передан сервером.'}</p>
+                </div>
+
+                {categoryIds.length > 0 && (
+                  <div className="source-group-categories" aria-label="Найденные категории">
+                    {categoryIds.map(id => (
+                      <span className="source-category-chip" key={id}>
+                        {categoryFor(id)?.name || `Категория ${id}`}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {group.drafts.length ? (
+                  <div className="source-group-drafts">
+                    {group.drafts.map(item => (
+                      <article className="listing" key={item.id}>
+                        <span className="draft-category">
+                          {categoryFor(item.mcId)?.name || 'Категория не определена'}
+                        </span>
+                        <h3>{item.title || categoryFor(item.mcId)?.name || 'Без заголовка'}</h3>
+                        <p className="listing-text">
+                          {item.text || 'Описание пока не заполнено.'}
+                        </p>
+                        <div className="listing-actions">
+                          <button type="button" onClick={() => onEdit(item)}>
+                            <Pencil size={16} /> Редактировать
+                          </button>
+                          <button type="button" onClick={() => onCopy(item)}>
+                            <Copy size={16} /> Скопировать
+                          </button>
+                          <button type="button" className="delete-link" onClick={() => onDelete(item)}>
+                            <Trash2 size={16} /> Удалить
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="source-group-empty">
+                    {group.hadGeneratedDrafts
+                      ? 'Сохранённых черновиков для этого объявления нет.'
+                      : 'Подходящих категорий для этого объявления не найдено.'}
+                  </p>
+                )}
+              </section>
+            );
+          })}
+        </div>
       )}
     </>
   );
@@ -1366,6 +1190,34 @@ function EditModal({
   );
 }
 
+// Отображаем реальный ход обработки CSV, не выдумывая проценты выполнения запроса к ИИ.
+function AnalysisOverlay({ progress }) {
+  const { stage, completed, total } = progress;
+  return (
+    <div className="analysis-overlay">
+      <section className="analysis-overlay-card" role="status" aria-live="polite" aria-atomic="true">
+        <div className="analysis-loading-spinner" aria-hidden="true" />
+        <h2>Идёт анализ объявлений</h2>
+        <p className="analysis-loading-stage">{stage}</p>
+        {total > 1 && (
+          <div className="analysis-loading-progress">
+            <div className="analysis-loading-progress-label">
+              <span>Обработано объявлений</span>
+              <strong>{completed} из {total}</strong>
+            </div>
+            <div className="analysis-loading-track">
+              <span style={{ width: `${Math.round(completed / total * 100)}%` }} />
+            </div>
+          </div>
+        )}
+        <p className="analysis-loading-note">
+          Приложение продолжает работать. Пожалуйста, дождитесь завершения обработки.
+        </p>
+      </section>
+    </div>
+  );
+}
+
 // Основное приложение
 function App() {
   const [session, setSession] = useState({});
@@ -1377,11 +1229,12 @@ function App() {
 
   const [records, setRecords] = useState([]);
   const [fileName, setFileName] = useState('');
-  const [showResults, setShowResults] = useState(false);
   const [analysis, setAnalysis] = useState(null);
+  const sourceMetadataRef = useRef(new Map());
 
   const [drafts, setDrafts] = useState([]);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState({ stage: '', completed: 0, total: 1 });
 
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -1408,6 +1261,9 @@ function App() {
     const refreshToken = session?.refreshToken;
     window.history.replaceState(null, '', '/login');
     setSession({});
+    sourceMetadataRef.current.clear();
+    setAnalysis(null);
+    setDrafts([]);
     go('overview');
     if (refreshToken) {
       try {
@@ -1425,7 +1281,12 @@ function App() {
     }
     let active = true;
     listDrafts(null, session.accessToken)
-      .then(items => { if (active) setDrafts(items); })
+      .then(items => {
+        if (active) setDrafts(items.map(item => ({
+          ...item,
+          ...(sourceMetadataRef.current.get(String(item.id)) || {}),
+        })));
+      })
       .catch(err => { if (active) setError(err.message); });
     return () => { active = false; };
   }, [session?.accessToken]);
@@ -1444,10 +1305,6 @@ function App() {
   const go = target => {
     setPage(target);
 
-    if (target === 'overview') {
-      setShowResults(false);
-    }
-
     setError('');
 
     window.scrollTo({
@@ -1459,40 +1316,108 @@ function App() {
   const notify = text => setToast(text);
 
   const onAnalyze = async () => {
+    if (analyzing) return;
     setError('');
 
     const sourceRows = inputMode === 'text'
       ? [{ id: '1', description: description.trim() }]
       : records;
 
-    if (
-      !sourceRows.length ||
-      sourceRows.some(row => row.description.length < 12)
-    ) {
-      setError(
-        'Введите описание не короче 12 символов или загрузите корректный CSV.'
-      );
+    if (!sourceRows.length || sourceRows.some(row => row.description.length < 12)) {
+      setError('Введите описание не короче 12 символов или загрузите корректный CSV.');
       return;
     }
 
+    const runId = crypto.randomUUID();
+    const completedGroups = [];
+    const sourceByDraftId = new Map();
+    let oldDraftsDeleted = false;
+
     setAnalyzing(true);
+    setAnalysisProgress({
+      stage: 'Удаляем черновики предыдущего анализа…',
+      completed: 0,
+      total: sourceRows.length,
+    });
+
     try {
-      const groups = [];
-      for (const row of sourceRows) {
+      // Не начинаем новый анализ, пока сервер не подтвердил удаление старых черновиков.
+      await deleteAllDrafts(session.accessToken);
+      oldDraftsDeleted = true;
+      setDrafts([]);
+      setAnalysis(null);
+      sourceMetadataRef.current.clear();
+
+      for (const [index, row] of sourceRows.entries()) {
+        setAnalysisProgress({
+          stage: `Анализируем объявление ${index + 1} из ${sourceRows.length}…`,
+          completed: index,
+          total: sourceRows.length,
+        });
+
         const result = await analyzeText(row.description, MAIN_CATEGORY_ID, session.accessToken);
-        groups.push({
+        const sourceKey = `${runId}:${row.id}`;
+        const proposals = (result.drafts || []).map(draft => ({ ...draft, key: draft.id }));
+
+        proposals.forEach(draft => {
+          if (draft.id != null) {
+            sourceByDraftId.set(String(draft.id), {
+              sourceKey,
+              sourceId: row.id,
+              sourceIndex: index + 1,
+              sourceDescription: row.description,
+            });
+          }
+        });
+
+        completedGroups.push({
           id: row.id,
+          sourceKey,
           description: row.description,
-          proposals: result.drafts.map(draft => ({ ...draft, key: draft.id })),
+          proposals,
+        });
+
+        setAnalysisProgress({
+          stage: `Объявление ${index + 1} обработано`,
+          completed: index + 1,
+          total: sourceRows.length,
         });
       }
-      setAnalysis({ runId: crypto.randomUUID(), sourceType: inputMode, filename: fileName, groups });
-      setDrafts(await listDrafts(null, session.accessToken));
-      setShowResults(true);
+
+      setAnalysisProgress({
+        stage: 'Загружаем готовые черновики…',
+        completed: sourceRows.length,
+        total: sourceRows.length,
+      });
+
+      sourceMetadataRef.current = sourceByDraftId;
+      const storedDrafts = await listDrafts(null, session.accessToken);
+      const enrichedDrafts = storedDrafts.map(draft => ({
+        ...draft,
+        ...(sourceByDraftId.get(String(draft.id)) || {}),
+      }));
+
+      setDrafts(enrichedDrafts);
+      setAnalysis({ runId, sourceType: inputMode, filename: fileName, groups: completedGroups });
+      setPage('drafts');
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      notify('Анализ завершён. Черновики готовы.');
     } catch (err) {
+      // Если ошибка произошла посреди CSV, сохраним доступ к уже созданным черновикам.
+      if (oldDraftsDeleted) {
+        sourceMetadataRef.current = sourceByDraftId;
+        setAnalysis({ runId, sourceType: inputMode, filename: fileName, groups: completedGroups });
+        try {
+          const storedDrafts = await listDrafts(null, session.accessToken);
+          setDrafts(storedDrafts.map(draft => ({
+            ...draft,
+            ...(sourceByDraftId.get(String(draft.id)) || {}),
+          })));
+        } catch {
+          // Покажем исходную ошибку анализа, не маскируя её ошибкой обновления списка.
+        }
+      }
       setError(err.message || 'Не удалось выполнить анализ.');
-      try { setDrafts(await listDrafts(null, session.accessToken)); } catch { /* Show the analysis error. */ }
     } finally {
       setAnalyzing(false);
     }
@@ -1518,6 +1443,8 @@ function App() {
       if (deleteTarget.type === 'all') {
         await deleteAllDrafts(session.accessToken);
         setDrafts([]);
+        setAnalysis(null);
+        sourceMetadataRef.current.clear();
         notify('Все черновики удалены');
       } else {
         await removeDraft(deleteTarget.item.id, session.accessToken);
@@ -1535,7 +1462,7 @@ function App() {
   const saveEdit = async item => {
     try {
       const updated = await updateDraft(item, session.accessToken);
-      setDrafts(prev => prev.map(d => d.id === item.id ? updated : d));
+      setDrafts(prev => prev.map(d => d.id === item.id ? { ...d, ...updated } : d));
       setEditItem(null);
       notify('Изменения сохранены');
     } catch (err) { setError(err.message); }
@@ -1555,8 +1482,8 @@ function App() {
         onLogout={onLogout}
       />
 
-      <main className="main-content">
-        {page === 'overview' && !showResults && (
+      <main className="main-content" aria-busy={analyzing}>
+        {page === 'overview' && (
           <OverviewPage
             inputMode={inputMode}
             setInputMode={setInputMode}
@@ -1572,18 +1499,10 @@ function App() {
           />
         )}
 
-        {page === 'overview' && showResults && analysis && (
-          <ResultPage
-            analysis={analysis}
-            onBack={() => setShowResults(false)}
-            onDrafts={() => go('drafts')}
-            onCopy={copy}
-          />
-        )}
-
         {page === 'drafts' && (
           <DraftsPage
             items={drafts}
+            analysis={analysis}
             onNew={() => go('overview')}
             onEdit={setEditItem}
             onDelete={item => {
@@ -1598,6 +1517,8 @@ function App() {
           />
         )}
       </main>
+
+      {analyzing && <AnalysisOverlay progress={analysisProgress} />}
 
       {toast && (
         <div className="toast">
