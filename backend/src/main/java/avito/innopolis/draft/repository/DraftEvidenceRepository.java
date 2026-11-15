@@ -2,9 +2,16 @@ package avito.innopolis.draft.repository;
 
 import avito.innopolis.draft.entity.DraftEvidence;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface DraftEvidenceRepository extends JpaRepository<DraftEvidence,UUID> {
     void deleteByDraft_Id(UUID draftId);
+    @Modifying
+    @Query("delete from DraftEvidence evidence where evidence.draft.id in :draftIds")
+    void deleteByDraftIds(@Param("draftIds") List<UUID> draftIds);
 }

@@ -125,6 +125,10 @@ export const deleteDraft = (draftId, token) => request(`${API_PREFIX}/drafts/${d
   method: 'DELETE', token,
 });
 
+export const deleteAllDrafts = token => request(`${API_PREFIX}/drafts`, {
+  method: 'DELETE', token,
+});
+
 export function exportDraft(draft) {
   return `${draft.title || ''}\n\n${draft.text || ''}`;
 }

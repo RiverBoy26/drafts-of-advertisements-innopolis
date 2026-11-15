@@ -34,6 +34,12 @@ public class DraftController {
         return Map.of("items", draftService.list(state).stream().map(this::toView).toList());
     }
 
+    @DeleteMapping("/drafts")
+    public ResponseEntity<Void> deleteAll() {
+        draftService.deleteAll();
+        return ResponseEntity.noContent().build();
+    }
+
     @GetMapping("/analyses/{id}/result")
     public Map<String, List<DraftItem>> result(@PathVariable UUID id) {
         List<DraftItem> drafts = draftService.forRun(id).stream()
@@ -65,7 +71,7 @@ public class DraftController {
 
     private DraftView toView(Draft draft) {
         return new DraftView(
-                draft.id, draft.analysis.id, draft.analysis.sourceAd.id, draft.targetMc.mcId,
+                draft.id, draft.analysis.id, draft.analysis.sourceAd.id, draft.analysis.sourceAd.description, draft.targetMc.mcId,
                 draft.title, draft.body, draft.status, draft.collectionState, draft.createdAt, draft.updatedAt);
     }
 }
