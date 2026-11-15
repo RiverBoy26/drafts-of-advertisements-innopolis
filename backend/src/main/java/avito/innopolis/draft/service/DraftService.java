@@ -70,6 +70,16 @@ public class DraftService {
         draftRepository.delete(draft);
     }
 
+    @Transactional
+    public void deleteAll() {
+        List<UUID> draftIds = draftRepository.findIdsByUserId(analysisService.userId());
+        if (draftIds.isEmpty()) {
+            return;
+        }
+        evidenceRepository.deleteByDraftIds(draftIds);
+        draftRepository.deleteAllByIdInBatch(draftIds);
+    }
+
     private void requireState(String state) {
         if (!COLLECTION_STATES.contains(state)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_DRAFT_STATE", "Допустимые состояния: suggested, draft, ready");
