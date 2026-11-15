@@ -6,7 +6,7 @@ import {
   Pencil, Search, ShieldCheck, Sparkles, Trash2, UploadCloud, UserRound,
   X, AlertCircle, Eye, EyeOff, SlidersHorizontal, Clock3, Plus,
 } from 'lucide-react';
-import { analyzeText, deleteDraft as removeDraft, listDrafts, login, logout, register, updateDraft } from './api.js';
+import { analyzeText, deleteAllDrafts, deleteDraft as removeDraft, listDrafts, login, logout, register, updateDraft } from './api.js';
 
 const MICROCATEGORIES = [
   { mcId: 101, name: 'Ремонт под ключ' },
@@ -18,18 +18,9 @@ const MICROCATEGORIES = [
 ];
 
 const MAIN_CATEGORY_ID = 101;
-const SESSION_STORAGE = 'draftly-session-v1';
 
 const categoryFor = id =>
   MICROCATEGORIES.find(c => c.mcId === Number(id));
-
-function safeRead(key) {
-  try {
-    return JSON.parse(localStorage.getItem(key)) || {};
-  } catch {
-    return {};
-  }
-}
 
 // CSV-парсер. Поддерживает запятую и точку с запятой,
 // текст в кавычках и переносы строк.
@@ -504,7 +495,7 @@ function AppHeader({
 
             <div className="drawer-footer">
               <CircleHelp size={19} />
-              Подготовленные тексты можно проверить и изменить в черновиках.
+              С любовью, Команда 404! С хрумками и газявой!!!
             </div>
           </aside>
         </div>
@@ -767,7 +758,42 @@ function OverviewPage({
 
 // Результаты анализа в разделе «Обзор»
 
+function SourcePreviewModal({ preview, onClose }) {
+  useEffect(() => {
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div
+      className="modal-layer"
+      onMouseDown={event => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="modal source-preview-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="source-preview-title"
+      >
+        <div className="modal-head">
+          <h2 id="source-preview-title">Объявление {preview.number}</h2>
+          <button type="button" className="icon-button" aria-label="Закрыть" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+        <p className="source-preview-text">{preview.description}</p>
+      </section>
+    </div>
+  );
+}
+
 function ResultPage({ analysis, onBack, onDrafts, onCopy }) {
+  const [sourcePreview, setSourcePreview] = useState(null);
   const total = analysis.groups.reduce(
     (sum, group) => sum + group.proposals.length,
     0
@@ -877,6 +903,17 @@ function ResultPage({ analysis, onBack, onDrafts, onCopy }) {
                     {String(index + 1).padStart(2, '0')}
                   </span>
                   <strong>Объявление {index + 1}</strong>
+                  <button
+                    type="button"
+                    className="text-link source-preview-link"
+                    onClick={event => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setSourcePreview({ number: index + 1, description: group.description });
+                    }}
+                  >
+                    Показать
+                  </button>
                 </span>
 
                 <span className="analysis-group-right">
@@ -914,6 +951,9 @@ function ResultPage({ analysis, onBack, onDrafts, onCopy }) {
           )
         ))}
       </div>
+      {sourcePreview && (
+        <SourcePreviewModal preview={sourcePreview} onClose={() => setSourcePreview(null)} />
+      )}
     </>
   );
 }
@@ -925,11 +965,24 @@ function DraftsPage({
   onNew,
   onEdit,
   onDelete,
+  onDeleteAll,
   onCopy,
 }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [sort, setSort] = useState('newest');
+  const [sourcePreview, setSourcePreview] = useState(null);
+
+  const sourceNumbers = useMemo(() => {
+    const numbers = new Map();
+    [...items]
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      .forEach(item => {
+        const key = item.sourceAdId || item.analysisId || item.id;
+        if (!numbers.has(key)) numbers.set(key, numbers.size + 1);
+      });
+    return numbers;
+  }, [items]);
 
   const filtered = useMemo(() => {
     return items
@@ -942,6 +995,8 @@ function DraftsPage({
           categoryFor(item.mcId)?.name || ''
         } ${
           item.sourceId || ''
+        } ${
+          item.sourceDescription || ''
         }`.toLowerCase();
 
         return (
@@ -966,6 +1021,22 @@ function DraftsPage({
           : first - second;
       });
   }, [items, query, category, sort]);
+
+  const groups = useMemo(() => {
+    const bySource = new Map();
+    filtered.forEach(item => {
+      const key = item.sourceAdId || item.analysisId || item.id;
+      if (!bySource.has(key)) {
+        bySource.set(key, {
+          number: sourceNumbers.get(key),
+          description: item.sourceDescription,
+          drafts: [],
+        });
+      }
+      bySource.get(key).drafts.push(item);
+    });
+    return [...bySource.values()];
+  }, [filtered, sourceNumbers]);
 
   return (
     <>
@@ -1023,6 +1094,16 @@ function DraftsPage({
             <option value="oldest">Сначала старые</option>
           </select>
         </div>
+
+        <Button
+          type="button"
+          className="button-danger-outline delete-all-button"
+          onClick={onDeleteAll}
+          disabled={!items.length}
+        >
+          <Trash2 size={16} />
+          Удалить все черновики
+        </Button>
       </div>
 
       <p className="results-count">
@@ -1062,54 +1143,105 @@ function DraftsPage({
         </div>
       ) : (
 
-        <div className="collection-list">
-          {filtered.map(item => (
-            <article className="listing" key={item.id}>
-
-              {/* Название объявления */}
-              <h3>
-                {item.title ||
-                  categoryFor(item.mcId)?.name ||
-                  'Без заголовка'}
-              </h3>
-
-              {/* Категория */}
-              <p className="listing-category">
-                Категория: {categoryFor(item.mcId)?.name || 'Не определена'}
-              </p>
-
-              {/* Описание */}
-              <p className="listing-text">
-                {item.text || 'Описание пока не заполнено.'}
-              </p>
-
-              {/* Кнопки управления */}
-              <div className="listing-actions">
-                <button onClick={() => onEdit(item)}>
-                  <Pencil size={16} />
-                  Редактировать
-                </button>
-
-                <button onClick={() => onCopy(item)}>
-                  <Copy size={16} />
-                  Скопировать
-                </button>
-
-                <button
-                  className="delete-link"
-                  onClick={() => onDelete(item)}
-                >
-                  <Trash2 size={16} />
-                  Удалить
-                </button>
+        <div className="analysis-group-list">
+          {groups.map(group => (
+            <details className="analysis-group" key={group.number}>
+              <summary className="analysis-group-summary">
+                <span className="analysis-group-title">
+                  <span className="analysis-group-number">
+                    {String(group.number).padStart(2, '0')}
+                  </span>
+                  <strong>Объявление {group.number}</strong>
+                  <button
+                    type="button"
+                    className="text-link source-preview-link"
+                    onClick={event => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setSourcePreview({ number: group.number, description: group.description });
+                    }}
+                  >
+                    Показать
+                  </button>
+                </span>
+                <ChevronDown size={19} className="analysis-chevron" />
+              </summary>
+              <div className="analysis-group-body">
+                {group.drafts.map(item => (
+                  <article className="listing" key={item.id}>
+                    <h3>{item.title || categoryFor(item.mcId)?.name || 'Без заголовка'}</h3>
+                    <p className="listing-category">
+                      Категория: {categoryFor(item.mcId)?.name || 'Не определена'}
+                    </p>
+                    <p className="listing-text">
+                      {item.text || 'Описание пока не заполнено.'}
+                    </p>
+                    <div className="listing-actions">
+                      <button type="button" onClick={() => onEdit(item)}>
+                        <Pencil size={16} />
+                        Редактировать
+                      </button>
+                      <button type="button" onClick={() => onCopy(item)}>
+                        <Copy size={16} />
+                        Скопировать
+                      </button>
+                      <button type="button" className="delete-link" onClick={() => onDelete(item)}>
+                        <Trash2 size={16} />
+                        Удалить
+                      </button>
+                    </div>
+                  </article>
+                ))}
               </div>
-
-            </article>
+            </details>
           ))}
         </div>
 
       )}
+      {sourcePreview && (
+        <SourcePreviewModal preview={sourcePreview} onClose={() => setSourcePreview(null)} />
+      )}
     </>
+  );
+}
+
+function DeleteDraftModal({ target, count, pending, error, onClose, onConfirm }) {
+  const isAll = target.type === 'all';
+  const item = target.item;
+  useEffect(() => {
+    if (pending) return undefined;
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [pending, onClose]);
+
+  return (
+    <div
+      className="modal-layer"
+      onMouseDown={event => {
+        if (!pending && event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className="modal delete-draft-modal" role="dialog" aria-modal="true" aria-labelledby="delete-draft-title" aria-describedby="delete-draft-description">
+        <div className="modal-head">
+          <h2 id="delete-draft-title">{isAll ? 'Удалить все черновики?' : 'Удалить черновик?'}</h2>
+        </div>
+        <p id="delete-draft-description" className="delete-draft-description">
+          {isAll
+            ? `Все черновики (${count}), включая скрытые поиском и фильтрами, будут удалены без возможности восстановления.`
+            : `Черновик «${item.title || categoryFor(item.mcId)?.name || 'Без заголовка'}» будет удалён без возможности восстановления.`}
+        </p>
+        {error && <p role="alert" className="inline-error">{error}</p>}
+        <div className="modal-actions">
+          <Button type="button" onClick={onClose} disabled={pending}>Отмена</Button>
+          <Button type="button" className="button-danger" onClick={onConfirm} disabled={pending}>
+            {pending ? 'Удаляем…' : isAll ? 'Удалить все' : 'Удалить'}
+          </Button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1236,7 +1368,7 @@ function EditModal({
 
 // Основное приложение
 function App() {
-  const [session, setSession] = useState(() => safeRead(SESSION_STORAGE));
+  const [session, setSession] = useState({});
   const user = session?.user || null;
   const [page, setPage] = useState('overview');
   const [inputMode, setInputMode] = useState('text');
@@ -1254,19 +1386,27 @@ function App() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [editItem, setEditItem] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  useEffect(() => {
+    localStorage.removeItem('draftly-session-v1');
+    window.history.replaceState(null, '', '/login');
+  }, []);
 
   const onAuth = async (mode, credentials) => {
     const nextSession = await (mode === 'register'
       ? register(credentials)
       : login(credentials));
-    localStorage.setItem(SESSION_STORAGE, JSON.stringify(nextSession));
+    window.history.replaceState(null, '', '/');
     setSession(nextSession);
     setError('');
   };
 
   const onLogout = async () => {
     const refreshToken = session?.refreshToken;
-    localStorage.removeItem(SESSION_STORAGE);
+    window.history.replaceState(null, '', '/login');
     setSession({});
     go('overview');
     if (refreshToken) {
@@ -1370,16 +1510,26 @@ function App() {
     }
   };
 
-  const deleteDraft = async item => {
-    if (!window.confirm('Удалить черновик?')) {
-      return;
-    }
-
+  const deleteDraft = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setDeleteError('');
     try {
-      await removeDraft(item.id, session.accessToken);
-      setDrafts(prev => prev.filter(d => d.id !== item.id));
-      notify('Черновик удалён');
-    } catch (err) { setError(err.message); }
+      if (deleteTarget.type === 'all') {
+        await deleteAllDrafts(session.accessToken);
+        setDrafts([]);
+        notify('Все черновики удалены');
+      } else {
+        await removeDraft(deleteTarget.item.id, session.accessToken);
+        setDrafts(prev => prev.filter(d => d.id !== deleteTarget.item.id));
+        notify('Черновик удалён');
+      }
+      setDeleteTarget(null);
+    } catch (err) {
+      setDeleteError(err.message || 'Не удалось удалить черновик.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const saveEdit = async item => {
@@ -1436,7 +1586,14 @@ function App() {
             items={drafts}
             onNew={() => go('overview')}
             onEdit={setEditItem}
-            onDelete={deleteDraft}
+            onDelete={item => {
+              setDeleteError('');
+              setDeleteTarget({ type: 'one', item });
+            }}
+            onDeleteAll={() => {
+              setDeleteError('');
+              setDeleteTarget({ type: 'all' });
+            }}
             onCopy={copy}
           />
         )}
@@ -1454,6 +1611,16 @@ function App() {
           item={editItem}
           onClose={() => setEditItem(null)}
           onSave={saveEdit}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteDraftModal
+          target={deleteTarget}
+          count={drafts.length}
+          pending={deleting}
+          error={deleteError}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={deleteDraft}
         />
       )}
     </div>
