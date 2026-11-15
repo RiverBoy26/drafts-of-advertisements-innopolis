@@ -132,12 +132,6 @@ function parseCsv(content) {
     return { id, description };
   });
 
-  if (records.length > 100) {
-    throw new Error(
-      'Для предпросмотра загрузите не более 100 записей.'
-    );
-  }
-
   return records;
 }
 
@@ -667,7 +661,7 @@ function OverviewPage({
               </Button>
 
               <span className="upload-format">
-                Столбцы: id, description · до 2 МБ
+                Столбцы: id, description
               </span>
             </div>
 
