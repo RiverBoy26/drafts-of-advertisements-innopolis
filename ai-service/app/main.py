@@ -64,7 +64,8 @@ _latin=list("abvgdezz iiklm noprstufhccssxyxeua".replace(" ",""))
 _TRANS=str.maketrans({c:_latin[i] for i,c in enumerate(_ru)}|{chr(i):_latin[i-0x410] for i in range(0x410,0x430)}|{chr(0x451):"e",chr(0x401):"e"})
 def latin(s):return s.lower().translate(_TRANS)
 def get_model():
-    default_model=ROOT/"artifacts/cpu_char_noise1024.joblib"
+    default_model=ROOT/"artifacts/cpu_char_conflict_resolved.joblib"
+    if not default_model.exists():default_model=ROOT/"artifacts/cpu_char_noise1024.joblib"
     if not default_model.exists():default_model=ROOT/"artifacts/cpu_char.joblib"
     p=Path(os.getenv("CPU_MODEL_PATH",str(default_model)))
     if not p.exists(): return None
@@ -80,22 +81,32 @@ try:CPU_MODEL=get_model(); MODEL_LOAD_ERROR=None
 except Exception:CPU_MODEL=None; MODEL_LOAD_ERROR="CPU_MODEL_LOAD_FAILED"; logger.error("CPU model artifact is missing or incompatible")
 MODEL=CPU_MODEL
 ACTIVE_BACKEND="cpu-charwb"
-_rubert_path=os.getenv("RUBERT_MODEL_PATH",str(ROOT/"artifacts/rubert_base"))
+_rubert_path=os.getenv("RUBERT_MODEL_PATH",str(ROOT/"artifacts/rubert_conflict_resolved"))
 _local_backend=choose_local_classifier_backend(os.getenv("LOCAL_CLASSIFIER_BACKEND","auto"),_rubert_path)
 if _local_backend in {"rubert","ensemble"}:
     try:
-        from app.transformer_classifier import ProbabilityBlend, RuBertClassifier
+        from app.transformer_classifier import AdaptiveProbabilityBlend, ProbabilityBlend, RuBertClassifier
         _rubert=RuBertClassifier(_rubert_path)
         if _local_backend=="ensemble":
             if CPU_MODEL is None:raise RuntimeError("CPU_MODEL_UNAVAILABLE_FOR_ENSEMBLE")
             _rubert_weight=float(os.getenv("ENSEMBLE_RUBERT_WEIGHT","0.25"))
             _cpu_weight=float(os.getenv("ENSEMBLE_CPU_WEIGHT","0.75"))
-            _classifier=ProbabilityBlend((CPU_MODEL["model"],_rubert),(_cpu_weight,_rubert_weight))
+            adaptive=os.getenv("ENSEMBLE_ADAPTIVE","false").lower() in {"1","true","yes","on"}
+            if adaptive:
+                _classifier=AdaptiveProbabilityBlend(
+                    CPU_MODEL["model"], _rubert,
+                    short_rubert_weight=float(os.getenv("ENSEMBLE_SHORT_RUBERT_WEIGHT","0.55")),
+                    long_rubert_weight=float(os.getenv("ENSEMBLE_LONG_RUBERT_WEIGHT","0.45")),
+                    token_limit=int(os.getenv("ENSEMBLE_ADAPTIVE_TOKEN_LIMIT","512")),
+                )
+            else:
+                _classifier=ProbabilityBlend((CPU_MODEL["model"],_rubert),(_cpu_weight,_rubert_weight))
             _threshold=float(os.getenv("ENSEMBLE_THRESHOLD","0.525"))
         else:
             _classifier=_rubert
             _threshold=.475
-        MODEL={"model":_classifier,"class_ids":(102,103,104,105,106),"input_field":"description","threshold":_threshold,"version":f"local-{_local_backend}-noise1024-v1"}
+        _version="conflict-resolved-adaptive-v1" if _local_backend=="ensemble" and adaptive else f"local-{_local_backend}-noise1024-v1"
+        MODEL={"model":_classifier,"class_ids":(102,103,104,105,106),"input_field":"description","threshold":_threshold,"version":_version}
         ACTIVE_BACKEND=f"{_local_backend}-{'cuda' if _rubert.device.type=='cuda' else 'cpu'}"
     except Exception as exc:
         if MODEL is None:MODEL_LOAD_ERROR="CLASSIFIER_UNAVAILABLE"

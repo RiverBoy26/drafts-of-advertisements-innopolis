@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 artifacts/*.joblib
 artifacts/rubert_base/
+artifacts/rubert_*/
