@@ -1,0 +1,887 @@
+{
+  "source_train_sha256": "745d7594551ad1dab457c0a84f1f2c41103883359dc22847b14b92162db5cfeb",
+  "workbook_sha256": "d8873b9bfbf6a6c0ce686bd4c08bdbf42002e0dfb0c3f59035917e45175d6ee7",
+  "added_csv_sha256": "d280aebbf291522e439a02ce5880365429b7ce99b1a0b0c05e9159b3c8e2dadf",
+  "raw_source_rows": 11109,
+  "unique_source_texts": 5963,
+  "removed_exact_duplicate_source_rows": 5146,
+  "conflict_groups_found": 5028,
+  "groups_adjudicated": [
+    {
+      "group_id": 0,
+      "size": 52,
+      "labels_before": {
+        "102;103;105;106": 1,
+        "102;103;104;105;106": 51
+      },
+      "labels_after": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "corrected_unique_texts": 1,
+      "reason": "Identical full-service offer; one row omitted plumbing despite explicit plumbing list."
+    },
+    {
+      "group_id": 6,
+      "size": 6,
+      "labels_before": {
+        "102;103;104;105;106": 5,
+        "102;103;105;106": 1
+      },
+      "labels_after": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "corrected_unique_texts": 1,
+      "reason": "Same full-service offer; omitted plumbing label is contradicted by the explicit utilities list."
+    },
+    {
+      "group_id": 138,
+      "size": 266,
+      "labels_before": {
+        "102;103;104;105;106": 261,
+        "102;103;105;106": 5
+      },
+      "labels_after": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "corrected_unique_texts": 5,
+      "reason": "Same five-trade offer; five name/ID variants omitted the explicitly listed plumbing service."
+    },
+    {
+      "group_id": 152,
+      "size": 9,
+      "labels_before": {
+        "102;103;104;105;106": 4,
+        "102;104;105;106": 4,
+        "102;103;104;106": 1
+      },
+      "labels_after": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "corrected_unique_texts": 5,
+      "reason": "Same full-cycle offer; varying seller names/IDs do not change the explicit five-trade scope."
+    },
+    {
+      "group_id": 293,
+      "size": 2,
+      "labels_before": {
+        "102;103;104;105;106": 1,
+        "102;103;104;106": 1
+      },
+      "labels_after": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "corrected_unique_texts": 1,
+      "reason": "The same active full-renovation description lists electrical work; the minority row omitted 105."
+    },
+    {
+      "group_id": 406,
+      "size": 2,
+      "labels_before": {
+        "104;105": 1,
+        "": 1
+      },
+      "labels_after": [
+        104,
+        105
+      ],
+      "corrected_unique_texts": 1,
+      "reason": "Same full-renovation offer; engineering communication work and electricians/plumbers are explicitly offered."
+    },
+    {
+      "group_id": 541,
+      "size": 33,
+      "labels_before": {
+        "106": 31,
+        "": 2
+      },
+      "labels_after": [
+        106
+      ],
+      "corrected_unique_texts": 2,
+      "reason": "Same finishing-work description; two ID-only variants omitted the explicit painting/wallpaper trade."
+    },
+    {
+      "group_id": 562,
+      "size": 6,
+      "labels_before": {
+        "105;106": 5,
+        "105": 1
+      },
+      "labels_after": [
+        105,
+        106
+      ],
+      "corrected_unique_texts": 1,
+      "reason": "Same offer explicitly lists electrical and painting/finishing; one row omitted 106."
+    },
+    {
+      "group_id": 631,
+      "size": 2,
+      "labels_before": {
+        "102;103;104;105;106": 1,
+        "102;104;105;106": 1
+      },
+      "labels_after": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "corrected_unique_texts": 1,
+      "reason": "Same active broad renovation description; all five trades are listed, including tile."
+    },
+    {
+      "group_id": 670,
+      "size": 15,
+      "labels_before": {
+        "102;103;104;105;106": 12,
+        "103;104;105;106": 3
+      },
+      "labels_after": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "corrected_unique_texts": 3,
+      "reason": "Both repair types list plaster, tile, plumbing, electrical, and finishing work."
+    },
+    {
+      "group_id": 874,
+      "size": 4,
+      "labels_before": {
+        "": 2,
+        "104;105": 2
+      },
+      "labels_after": [
+        104,
+        105
+      ],
+      "corrected_unique_texts": 2,
+      "reason": "Same full-cycle offer; explicitly names electricians and plumbers and says the company starts implementation."
+    },
+    {
+      "group_id": 1897,
+      "size": 4,
+      "labels_before": {
+        "104;105": 3,
+        "102;104;105": 1
+      },
+      "labels_after": [
+        102,
+        104,
+        105
+      ],
+      "corrected_unique_texts": 3,
+      "reason": "The same active renovation offer explicitly lists plaster, electrical, and plumbing; one row omitted plaster."
+    },
+    {
+      "group_id": 2318,
+      "size": 3,
+      "labels_before": {
+        "102;103;106": 2,
+        "106": 1
+      },
+      "labels_after": [
+        102,
+        103,
+        106
+      ],
+      "corrected_unique_texts": 1,
+      "reason": "Same description explicitly offers plaster, tile, and finishing; one ID-only variant omitted plaster and tile."
+    }
+  ],
+  "changed_weak_label_texts": 27,
+  "manual_rows_reviewed": 51,
+  "manual_unique_texts": 50,
+  "manual_duplicates_removed": 1,
+  "csv_rows_with_joined_context": 7,
+  "manual_adjudications": [
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 1,
+      "description": "Для кабинета массажиста сделаем керамический пол в зоне душа, подключим душевую стойку и слив, перенесём питание к вытяжке и зеркалу",
+      "labels": [
+        103,
+        104,
+        105
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 2,
+      "description": "Оборудуем садовый домик под проживание: штукатурка по блокам, плитка на полу прихожей, разводка воды до раковины, новая электрика с автоматами и светом. Цена по плану",
+      "labels": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 3,
+      "description": "Примем заказ на кухню и санузел: выведем стены штукатурным раствором, облицуем плиткой мокрые зоны, подключим сантехнику, а в комнате зашпаклюем и покрасим стены",
+      "labels": [
+        102,
+        103,
+        104,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 4,
+      "description": "Обновим лоджию: керамогранит на пол, стеклообои на стены, потолок подготовим шпаклёвкой и выкрасим",
+      "labels": [
+        103,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 5,
+      "description": "В студии проведём кабель под варочную поверхность и подключим автомат, к мойке соберём подачу воды и канализацию",
+      "labels": [
+        104,
+        105
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 6,
+      "description": "Сдам небольшой офис после переезда арендаторов: мастера нашей бригады уложат плитку у входа, подключат рукомойник и сделают новую линию питания под принтер и сервер. Ремонт можно заказать отдельно от аренды.",
+      "labels": [
+        103,
+        104,
+        105
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 7,
+      "description": "Коммерческая отделка небольших офисов. Наносим механизированную штукатурку, укладываем керамику у входа, делаем разводку кабеля и перенос электроточек. Затем — финишная шпатлёвка и окраска в корпоративные цвета",
+      "labels": [
+        102,
+        103,
+        105,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 8,
+      "description": "Доставим на этаж мешки с сухими смесями, коробки с плиткой, ванны, автоматы и кабель. Есть грузчики и транспорт, работаем по заявкам магазинов",
+      "labels": [],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 9,
+      "description": "Сниму потёкший смесак, подключу новый, сифон соберу, проверю слив. Можно вечером после работы",
+      "labels": [
+        104
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 10,
+      "description": "Здравствуйте! Есть время на небольшую студию. Сначала выведем стены гипсовой штукатуркой; затем на пол у входа положим керамическую плитку. К мини-кухне заведём ХВС и канализацию, подключим мойку. В жилой части смонтируем розетки и освещение, а после черновых работ нанесём шпатлёвку и поклеим флизелиновые обои. Если удобно, можем показать промежуточные этапы по фото",
+      "labels": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 11,
+      "description": "Делаем ремонт в жилом блоке после перепланировки: штукатурим новые перегородки, выкладываем керамогранит в прихожей, разводим воду к кухонной зоне и устанавливаем смеситель. Электрик нашей команды прокладывает кабель, собирает щиток и розеточные группы. На финальном этапе шпаклюем стены, шлифуем и красим потолки. Весь объём распишем по этапам и материалам.",
+      "labels": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 12,
+      "description": "На открытой веранде с мойкой выровняем кирпичные простенки штукатуркой, уложим нескользящий керамогранит, подведём водопровод к крану",
+      "labels": [
+        102,
+        103,
+        104
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 13,
+      "description": "Свет в коридор: кабель проложу, распредкоробку соберу, датчик движения и два светильника подключу",
+      "labels": [
+        105
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 14,
+      "description": "После протечки восстановим штукатурку на стене, заменим повреждённый участок водопровода и перекрасим потолок. Можно согласовать только один этап",
+      "labels": [
+        102,
+        104,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 15,
+      "description": "🏠 РЕМОНТ КВАРТИР И НЕБОЛЬШИХ ДОМОВ. Работаем своей бригадой, можно заказать одну комнату или весь объект. Перед началом приезжаем на осмотр, обсуждаем, где будет стоять мебель, какие выводы нужны под технику, и составляем смету по этапам. ЧТО ДЕЛАЕМ: ✔ Выводим стены по маякам гипсовой либо цементной штукатуркой. Исправляем геометрию проёмов и углов, работаем с кирпичом и газобетоном. ✔ Облицовываем санузлы керамикой, укладываем керамогранит на пол, собираем фартуки и затираем швы. ✔ Разводим горячую и холодную воду, меняем участки канализации, устанавливаем и подключаем раковины, смесители, унитазы и душевые комплекты. ✔ Прокладываем электрокабель, собираем щитки, переносим выключатели, добавляем розетки и подключаем освещение. ✔ Подготавливаем стены шпатлёвкой, шлифуем, клеим флизелиновые обои и окрашиваем потолки. Не навязываем полный ремонт: список операций согласовывается с заказчиком. Работаем с материалом заказчика или организуем закупку по чекам. Если в квартире уже выполнена часть этапов, не заставляем переделывать всё заново. На осмотре записываем, какие поверхности готовы, где остаются выводы под технику и что необходимо закончить к дате переезда. Для предварительного расчёта пришлите план квартиры и несколько фотографий",
+      "labels": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 16,
+      "description": "СКЛАД ОТДЕЛОЧНЫХ МАТЕРИАЛОВ — распродажа остатков после закрытия торговой точки. На складе много позиций, всё можно осмотреть перед оплатой. В наличии гипсовая и цементная штукатурка, стартовая и финишная шпаклёвка, грунтовки, ведра интерьерной краски, обойный клей и рулоны обоев. Отдельно продаются плитка, мозаика, керамогранит, крестики, затирка и плиточный клей. Из сантехнических товаров остались смесители, сифоны, гофры, краны, подводки, несколько умывальников. Есть также автоматы, выключатели, розетки, кабель и светильники. Можно купить одну коробку или забрать остатки целой партией. Список с количеством отправлю в сообщениях, скидку на оптовый выкуп обсудим отдельно. Покупатель самостоятельно проверяет совместимость деталей и рассчитывает расход. Возможны упаковка, выдача со склада и доставка по городу. На фотографиях некоторые материалы показаны на уже готовых объектах — это иллюстрации товара, а не портфолио строительной бригады",
+      "labels": [],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 17,
+      "description": "Маляр и обойщик, частный мастер. Беру заявки на обновление жилых комнат, коридоров, кабинетов, небольших офисов. Могу приехать вечером, посмотреть стены и посчитать, сколько рулонов потребуется. Сейчас предлагаю подготовку поверхностей финишной шпатлёвкой, шлифовку, оклейку флизелиновыми и виниловыми обоями, покраску стен и потолков. Сложный рисунок подгоняю, стыки прохожу тщательно, мебель укрываю плёнкой. Можно сделать одну акцентную стену или целую комнату, материалы выбираем вместе. Раньше наша семейная бригада выполняла полный ремонт с плиткой, разводкой воды, монтажом электрических точек и штукатурными работами. Фотографии этих старых объектов оставил в профиле для примера отделки. Сейчас работаю самостоятельно именно по малярным работам и обоям. Если квартира уже подготовлена другими мастерами, удобно назначить конкретную дату, чтобы не держать помещение пустым. Напишите размеры комнат и приложите фото при дневном свете",
+      "labels": [
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 18,
+      "description": "Небольшие инженерные работы в квартирах, дачах и офисах. Не нужно собирать большую бригаду, если задача — перенести несколько точек или подключить оборудование после переезда. По воде: заменим старые подводки и запорные краны, соберём слив под кухонной мойкой, выведем воду под стиральную и посудомоечную машины, установим смеситель, подключим умывальник. По электрике: проложим отдельную линию для духовки, добавим розетки, поменяем выключатели и автоматы, подключим бра и потолочные светильники. Проверяем соединения и обсуждаем место установки до начала работ. Клиенты часто присылают нам дизайн-проекты с плиточным фартуком, штукатуркой стен и окрашенными потолками. Эти позиции помогают понять, где расположить оборудование и как не повредить готовую отделку, но в расчёт нашего заказа включаются конкретные сантехнические и электрические операции. Можно прислать фотографии кухни и список техники — предварительно определим перечень расходников",
+      "labels": [
+        104,
+        105
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 19,
+      "description": "Отделка входных групп, коридоров и лестничных площадок. Особенно часто обращаются после установки новой двери: остаются разбитые откосы, неровный проём, старое покрытие у порога. Снимем непрочные участки, подготовим основание, выставим маяки и восстановим стены полноценным штукатурным слоем. В тамбуре либо на ступенях уложим клинкер и нескользящий керамогранит, подрежем материал возле дверной коробки, оформим углы и затрём швы. Работаем и с маленькими площадями, не обязательно заказывать целый подъезд. На фото есть прежний объект с новыми светильниками, покраской, раковиной консьержа и обновлённым электрощитом — там параллельно трудились другие подрядчики. По нашим работам сейчас актуальны именно выравнивание штукатуркой и плиточная облицовка. Пришлите фото входа и размеры ступеней, можно будет быстро оценить объём и количество плитки",
+      "labels": [
+        102,
+        103
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 20,
+      "description": "РЕМОНТ ПОМЕЩЕНИЙ ДЛЯ БЬЮТИ-МАСТЕРОВ 💅 Салоны, небольшие кабинеты, студии маникюра и парикмахерские часто открываются в уже отделанном помещении. Поможем быстро подготовить рабочие зоны к установке оборудования, чтобы сотрудники смогли начать приём клиентов. В зоне мойки выкладываем керамический фартук и керамогранит на полу, оформляем примыкания и делаем затирку. Подключаем раковины, смесители, сифоны и слив, выводим воду к моечным постам. Для сушуаров, зеркал с подсветкой и маникюрных столов добавляем розетки, прокладываем электрические линии, ставим выключатели и светильники. На остальных стенах выполняем шпатлевание, шлифовку, окраску в выбранные оттенки или оклейку обоями. На объекте перед началом работ проверяем основание и схему коммуникаций. Если арендодатель уже выполнил штукатурное выравнивание стен, используем готовую поверхность и переходим к дальнейшим этапам. График и стоимость считаем после согласования планировки. В сообщениях можно получить фотографии похожих кабинетов",
+      "labels": [
+        103,
+        104,
+        105,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 21,
+      "description": "Устанавливаем душевую кабинку, проводит розетки и подсветку к зеркалу",
+      "labels": [
+        104,
+        105
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 22,
+      "description": "Качественная укладка плитки на кухню. Всё делаю на совесть.",
+      "labels": [
+        103
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 23,
+      "description": "Поклеим обои, установим смеситель",
+      "labels": [
+        104,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 24,
+      "description": "ВОССТАНОВЛЕНИЕ КВАРТИР ПОСЛЕ ПРОТЕЧЕК И АВАРИЙ. Когда потекла подводка или старое соединение, важно сперва устранить причину, а потом вернуть помещению прежний вид. Берём и одну стену, и несколько комнат. Сначала осмотрим место повреждения, заменим доступные участки водопроводной трубы, запорную арматуру или подводку, переподключим смеситель и проверим, нет ли повторного подтекания. После просушки восстановим разрушенный штукатурный слой на стенах, выведем геометрию откоса или угла. Для чистовой отделки нанесём финишную шпаклёвку, отшлифуем и покрасим поверхность либо наклеим новые обои с подбором цвета. В старой ванной иногда требуется заменить разбитую плитку, а после затопления кухни — проверить розетки и проводку. Такие пункты фиксируем в акте осмотра для оценки ущерба, но в текущем перечне наших работ предлагаем восстановление штукатурки, сантехнических соединений и малярной отделки. По фотографиям подскажем, что можно восстановить локально, а где удобнее обновить поверхность целиком.",
+      "labels": [
+        102,
+        104,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 25,
+      "description": "Установлю инсталляцию, подключу унитаз, заменю гибкие подводки и кран на стояке. Смету по трубам пришлю заранее",
+      "labels": [
+        104
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "Дай Бог.xlsx",
+      "id": 26,
+      "description": "Обновим лоджию: керамогранит на пол, стеклообои на стены, потолок подготовим шпаклёвкой и выкрасим",
+      "labels": [
+        103,
+        106
+      ],
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": [
+        "Дай Бог.xlsx",
+        4
+      ],
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-001",
+      "description": "Ремонт квартир под ключ и по этапам. Подготавливаем и штукатурим стены, укладываем плитку в санузлах, меняем трубы и устанавливаем сантехнику, прокладываем электропроводку, ставим розетки. В жилых комнатах клеим обои и красим стены. Можно заказать весь комплекс или отдельные этапы. Плиточные работы выполняет наша бригада; старое фото чужого объекта в портфолио не является отдельной услугой.",
+      "labels": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "joined_continuation": true,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-002",
+      "description": "Обновим квартиру перед заселением: поклеим новые обои, подготовим стены и покрасим потолки. Дополнительно поможем согласовать общий график ремонта и вывоз старой мебели. Электрику и сантехнику выполняют приглашённые заказчиком специалисты; мы эти работы не предлагаем.",
+      "labels": [
+        106
+      ],
+      "joined_continuation": true,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-003",
+      "description": "Комплексный ремонт санузлов. Устанавливаем ванну, раковину и унитаз, меняем водопроводные трубы, монтируем розетки и освещение, укладываем керамогранит на стены и пол. Штукатурные работы и покраску заказывает владелец у других мастеров.",
+      "labels": [
+        103,
+        104,
+        105
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-004",
+      "description": "Бригада обновит комнаты в квартире: выровняем стены штукатуркой, зашпаклюем дефекты, поклеим обои или покрасим подготовленную поверхность. Можно ремонтировать по одной комнате. Укладку плитки не выполняем, даже если в объявлении упоминается ремонт ванной.",
+      "labels": [
+        102,
+        106
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-005",
+      "description": "Помогаем спланировать ремонт квартиры: составим дизайн-проект, подберём отделочные материалы и подготовим смету по этапам. Организуем доставку и вывоз упаковки. Строительные и отделочные работы выполняют подрядчики заказчика; наша компания занимается только проектированием и комплектацией.",
+      "labels": [],
+      "joined_continuation": true,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-006",
+      "description": "Ремонт новостроек от черновой отделки до готовых комнат. Штукатурим стены по маякам, облицовываем санузлы кафелем, разводим воду и канализацию, устанавливаем сантехнику и собираем электрощит. Обои и малярную отделку можно заказать у другого подрядчика.",
+      "labels": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-007",
+      "description": "Обновление инженерных систем в квартире: заменим трубы водоснабжения, подключим мойку и стиральную машину, проложим кабель к новым розеткам и соберём щит. Отделочные материалы, штукатурка и укладка плитки в наш договор не входят.",
+      "labels": [
+        104,
+        105
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-008",
+      "description": "Делаем ремонт квартир и отдельных помещений. Наша специализация в этом заказе — облицовка стен и пола плиткой: кафель, мозаика и керамогранит, включая кухонный фартук. Обои и окраска в примере указаны как пожелания клиента, эти работы мы не выполняем.",
+      "labels": [
+        103
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-009",
+      "description": "Косметический ремонт кухни и ванной: восстановим штукатурный слой на стенах, заменим смеситель и подводку, поклеим обои в сухой зоне и покрасим потолок. Плитку укладывает отдельная бригада по договору заказчика.",
+      "labels": [
+        102,
+        104,
+        106
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-010",
+      "description": "Нужен ремонт без поиска исполнителей? Подготовим календарный план, смету и список закупок, будем принимать этапы и отправлять фотоотчёт. В объявлении приведены примеры штукатурки и плитки из прошлых проектов, но строительные работы наша компания сейчас не принимает.",
+      "labels": [],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-011",
+      "description": "Отделка ванной комнаты и прихожей: оштукатурим неровные стены и уложим керамогранит на пол, в санузле облицуем стены плиткой. Подключение унитаза и перенос розеток выполняют специалисты заказчика. Работаем как по готовому проекту, так и с согласованной раскладкой.",
+      "labels": [
+        102,
+        103
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-012",
+      "description": "Ремонт квартир и домов, в том числе небольшие сантехнические задачи. Заменим трубы и сифоны, устраним течь, установим смеситель и подключим раковину. Раньше мы также укладывали кафель, но плиточные заказы больше не принимаем.",
+      "labels": [
+        104
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-013",
+      "description": "Обновим жилую комнату: проложим новую проводку, перенесём розетки и выключатели, затем подготовим и покрасим стены. Штукатурку выполняет отдельный отделочник, сантехнические работы в этот пакет не входят.",
+      "labels": [
+        105,
+        106
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-014",
+      "description": "Ремонт квартир и коттеджей под ключ. Выполняем демонтаж, штукатурим и шпаклюем стены, красим потолки, клеим обои, укладываем кафель и керамогранит. Меняем трубы, подключаем сантехнику, монтируем электропроводку, розетки и выключатели. Состав работ можно сократить до нужных этапов.",
+      "labels": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-015",
+      "description": "Берёмся за ремонт ванной и кухни: укладываем плитку, меняем затирку, устанавливаем унитазы и смесители, подключаем мойку. Электропроводку и освещение не монтируем. Фотографии старых электромонтажных объектов оставлены в портфолио прежнего мастера.",
+      "labels": [
+        103,
+        104
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-016",
+      "description": "Выполняем отделку квартир по комнатам. В этой услуге штукатурим стены цементной смесью, выставляем маяки и выводим плоскость под дальнейшую отделку. Малярные работы, обои и плитку можно заказать у других специалистов; в нашу смету они не включаются.",
+      "labels": [
+        102
+      ],
+      "joined_continuation": true,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-017",
+      "description": "Капитальный ремонт кухни: заменим трубы и подключим мойку, перенесём розетки для техники, поклеим обои и покрасим потолок. Штукатурка и укладка плитки обсуждаются с отдельными мастерами. Услуги доступны по отдельности или в общем плане ремонта.",
+      "labels": [
+        104,
+        105,
+        106
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-018",
+      "description": "Компания по ремонту помогает подобрать подрядчиков, согласовать смету и график, проверить документы и организовать закупку материалов. В примерах работ встречаются электрика и сантехника, однако собственные мастера на объекты не выезжают и ремонт не выполняют.",
+      "labels": [],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-019",
+      "description": "Обновление кухни и прихожей: уложим плитку на пол и сделаем фартук из керамогранита, установим дополнительные розетки и выключатели. Разводка воды, установка мойки и покраска стен выполняются другими мастерами.",
+      "labels": [
+        103,
+        105
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-020",
+      "description": "Ремонт ванной под ключ с возможностью заказать отдельные этапы. Оштукатурим стены под будущую облицовку, заменим трубы водоснабжения и канализации, подключим душевую систему и раковину. Плитку, электрику и покраску в этой бригаде не выполняем.",
+      "labels": [
+        102,
+        104
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-021",
+      "description": "Предлагаем косметическое обновление квартир: снимаем старые обои, клеим новые, шпаклюем небольшие дефекты, красим стены и потолки. Можно освежить одну комнату перед сдачей жильцам. Электромонтаж и замену труб нужно поручить профильным мастерам.",
+      "labels": [
+        106
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-022",
+      "description": "Комплексная отделка квартир и офисов. Наша команда отвечает за электрику: прокладывает кабель, собирает электрощит, подключает светильники и устанавливает розетки. В тексте также упомянуты штукатурка и покраска из сметы прошлого объекта; сейчас эти услуги мы не оказываем.",
+      "labels": [
+        105
+      ],
+      "joined_continuation": true,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-023",
+      "description": "Частная бригада выполняет ремонт квартир и небольших офисов. Штукатурим стены, укладываем плитку в мокрых зонах, устанавливаем сантехнику и меняем трубы, прокладываем электрику, клеим обои и красим потолки. Работаем по договору; можно обсудить полный ремонт или отдельную комнату.",
+      "labels": [
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "joined_continuation": true,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-024",
+      "description": "Ремонт ванной комнаты с инженерной подготовкой: подключим ванну и раковину, заменим трубы, проверим слив, установим розетки и светильники, облицуем стены кафелем и уложим плитку на пол. Стены предварительно готовит заказчик; штукатурку мы не наносим.",
+      "labels": [
+        103,
+        104,
+        105
+      ],
+      "joined_continuation": true,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    },
+    {
+      "source": "new_general_ads_25.csv",
+      "id": "new-025",
+      "description": "Отделка квартиры перед переездом: выровняем стены штукатуркой, зашпаклюем и покрасим их или поклеим обои, обновим потолки. В старом портфолио есть фотографии уложенной плитки, но сейчас плиточных заказов не берём. Подключение сантехники выполняет приглашённый заказчиком мастер.",
+      "labels": [
+        102,
+        106
+      ],
+      "joined_continuation": false,
+      "decision": "confirmed_by_text_context",
+      "duplicate_of": null,
+      "review_rule": "Count work currently offered by this advertiser; exclude past work, portfolio-only mentions, other providers, project/material-only services, and explicitly declined work."
+    }
+  ],
+  "outputs": {
+    "base": "data/user-updated-train-conflict-resolved-base.jsonl",
+    "manual": "data/manual-conflict-resolved-additions.jsonl",
+    "merged": "data/user-updated-train-conflict-resolved.jsonl"
+  },
+  "retained_conflict_groups": [
+    201,
+    240,
+    491,
+    942,
+    2812
+  ],
+  "retained_conflict_rationale": "These groups differ in active work scope, service list, or presence of specific trade terms, so a majority label would erase real distinctions."
+}

@@ -1,0 +1,10 @@
+{
+  "device": "cuda",
+  "cold_model_load_seconds": 8.31,
+  "measured_rows": 100,
+  "latency_ms_p50": 15.35,
+  "latency_ms_p95": 62.34,
+  "latency_ms_mean": 36.26,
+  "elapsed_for_sample_seconds": 3.63,
+  "scope": "warm per-ad classification including normalization, CPU and sliding-window RuBERT inference, adaptive blend, threshold, explicit-negation rule; excludes API/HTTP and model startup"
+}

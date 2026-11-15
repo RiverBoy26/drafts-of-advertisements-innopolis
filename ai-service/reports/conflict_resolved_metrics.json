@@ -1,0 +1,45 @@
+{
+  "candidate": "conflict-resolved adaptive ensemble",
+  "previous_intent_context": {
+    "n": 19,
+    "micro_f1": 0.9090909090909091,
+    "precision": 0.8333333333333334,
+    "recall": 1.0,
+    "exact_match": 0.7368421052631579
+  },
+  "candidate_manual_unseen": {
+    "n": 19,
+    "micro_f1": 0.9090909090909091,
+    "precision": 0.8333333333333334,
+    "recall": 1.0,
+    "exact_match": 0.7368421052631579
+  },
+  "candidate_per_class_f1": {
+    "102": 0.9333333333333333,
+    "103": 0.8333333333333334,
+    "104": 1.0,
+    "105": 1.0,
+    "106": 0.8571428571428571
+  },
+  "previous_ood": {
+    "n": 800,
+    "false_positive_ads": 2,
+    "fpr_any": 0.0025,
+    "max_score_p95": 0.4299996633821124
+  },
+  "candidate_ood": {
+    "n": 800,
+    "false_positive_ads": 1,
+    "fpr_any": 0.00125,
+    "max_score_p95": 0.17725325606337683
+  },
+  "latest_secret_score": null,
+  "config": {
+    "cpu_weight_short": 0.45,
+    "rubert_weight_short": 0.55,
+    "cpu_weight_long": 0.55,
+    "rubert_weight_long": 0.45,
+    "short_limit_tokens": 512,
+    "threshold": 0.525
+  }
+}
