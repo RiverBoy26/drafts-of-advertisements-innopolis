@@ -625,6 +625,26 @@ select:focus-visible {
    Ввод текста и CSV
 ======================================== */
 
+.create-page {
+  position: relative;
+  isolation: isolate;
+}
+
+.create-page::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 70px -24px -60px;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(0, 170, 255, .22), transparent 57%),
+    radial-gradient(ellipse at 30% 55%, rgba(133, 81, 255, .16), transparent 55%),
+    radial-gradient(ellipse at 70% 55%, rgba(119, 217, 79, .17), transparent 55%),
+    radial-gradient(ellipse at 52% 75%, rgba(255, 164, 69, .14), transparent 52%);
+  filter: blur(32px);
+  pointer-events: none;
+}
+
 .input-panel {
   width: min(100%, 840px);
   margin: 0 auto;

@@ -559,7 +559,7 @@ function OverviewPage({
   };
 
   return (
-    <>
+    <div className="create-page">
       <div className="page-heading">
         <h1>Создать объявление</h1>
       </div>
@@ -752,7 +752,7 @@ function OverviewPage({
           </p>
         )}
       </section>
-    </>
+    </div>
   );
 }
 
