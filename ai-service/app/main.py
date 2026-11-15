@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, os, re, time, uuid, logging, random
+import asyncio, json, os, re, time, uuid, logging, random
 from contextvars import ContextVar
 from pathlib import Path
 import httpx, joblib
@@ -19,10 +19,19 @@ NAMES={101:"Ремонт под ключ",102:"Штукатурные работ
 logging.basicConfig(level=os.getenv("LOG_LEVEL","INFO")); logger=logging.getLogger("avito-ai")
 _REQUEST_BUDGET:ContextVar[float|None]=ContextVar("request_budget_usd",default=None)
 _PROVIDER_CALLS:ContextVar[int]=ContextVar("provider_http_calls",default=0)
+_PROVIDER_METRICS:ContextVar[list|None]=ContextVar("provider_metrics",default=None)
 class Input(BaseModel):
     model_config=ConfigDict(extra="forbid")
     description:str=Field(min_length=1,max_length=MAX_DESCRIPTION_CHARS)
     mcId:int=Field(strict=True)
+    targetMcIds:list[int]|None=None
+    @field_validator("targetMcIds",mode="before")
+    @classmethod
+    def known_targets(cls,v):
+        if v is None:return v
+        if not isinstance(v,list) or any(type(i) is not int or i not in range(102,107) for i in v) or len(v)!=len(set(v)):
+            raise ValueError("targetMcIds must contain unique integers 102..106")
+        return v
     @field_validator("description")
     @classmethod
     def text_required(cls,v):
@@ -114,7 +123,7 @@ PATTERNS={
 103:r"plitk\w*|plitocn\w*|plitochn\w*|keramogranit\w*|mozaik\w*|zatirk\w*",
 104:r"santehnik\w*|santehn\w*|santehnic\w*|trub\w*|smesitel\w*|rakovin\w*|unitaz\w*|kanaliz\w*|vodosnab\w*|sliv\w*",
 105:r"elektr\w*|provodk\w*|kabel\w*|rozet\w*|vyklyuchatel\w*|elektromontazh\w*|osveshchen\w*|elektroset\w*",
-106:r"obo\w*|pokras\w*|poklei\w*|shpaklev\w*|shpatlev\w*|malyar\w*|gruntov\w*|shlifovan\w*"}
+106:r"obo\w*|kras\w*|pokras\w*|poklei\w*|spaklev\w*|spatlev\w*|shpaklev\w*|shpatlev\w*|malyar\w*|gruntov\w*|shlifovan\w*"}
 NEG=r"(?:ne\s+(?:dela\w*|vypoln\w*|okazyv\w*|zanim\w*|bud\w*|predlag\w*|men\w*|menau\w*|uklad\w*|montir\w*|ustanav\w*|stukatur\w*|kle\w*|poklei\w*|spaklev\w*|spatlev\w*|slifov\w*|gruntov\w*|kras\w*)|ne\s+nashi|drug\w* podradcik|podradcik|podryadchik\s+ne\s+my|ran\w* delal|ran\w* zanim|bolshe\s+ne\s+(?:dela|prinima))"
 EXCEPTION=r"(?:krome|iskluc\w*|za\s+iskluc\w*)"
 EXCEPTION_FILLER=r"(?:vse\w*|rabot\w*|uslug\w*|remont\w*|po|uklad\w*|montaz\w*|ustanov\w*)"
@@ -154,6 +163,7 @@ def evidence(text,mc):
     # contractor's work cannot cancel a supported service in the same sentence.
     for clause in re.finditer(r"[^.!?;\n]+",text):
         raw=clause.group(); base=clause.start(); transformed=latin(raw)
+        if mc==102 and re.search(r"gipsokarton\w*",transformed,re.I) and not re.search(r"stukatur\w*|oshtukatur\w*",transformed,re.I):continue
         separators=list(re.finditer(r",|\b(?:i|no|a|zato|odnako|pri\s+etom)\b",transformed,re.I))
         bounds=[]; cursor=0
         for sep in separators:
@@ -166,12 +176,23 @@ def evidence(text,mc):
             start=base+left; end=base+right; part=transformed[left:right]
             matches=list(re.finditer(pat,part,re.I))
             if not matches:continue
+            if mc==102 and re.search(r"gipsokarton\w*",part,re.I) and not re.search(r"stukatur\w*|oshtukatur\w*",part,re.I):continue
             excluded=_exception_spans(part,pat)
             if not any(not any(left<=m.start() and m.end()<=right for left,right in excluded) for m in matches):continue
             if re.search(r"(?:^|\b)(?:vopros|sprashiv\w*|ishchu\s+mastera|nuzhen\s+master|ran\w*\s+delal|podradcik|podryadchik|ne\s+my|master\w*\s+po)(?:\b|$)",part,re.I):continue
             if re.search(NEG,part,re.I):continue
             if re.search(r"ispolzuy\w*.*kak\s+material|material\w*",part,re.I): continue
             result.append({"text":text[start:end],"start":start,"end":end})
+    return result
+def shared_evidence(text):
+    """Explicit provider-wide facts that can be reused without inventing category details."""
+    result=[]
+    general=r"\b(?:опыт\w*|стаж\w*|работаю\s+в|работаем\s+в|выезд\w*|фото\s+своих\s+работ|гаранти\w*|убираем\s+мусор|силами\s+одной\s+бригады|выполняем\s+все\s+работы\s+в\s+срок|рассчитаем\s+смету)\b"
+    for match in re.finditer(r"[^.!?;\n]+",text):
+        part=match.group().strip()
+        if re.search(general,part,re.I):
+            start=text.find(part,match.start(),match.end())
+            result.append({"text":part,"start":start,"end":start+len(part)})
     return result
 def parse_target_ids(answer,source):
     if not isinstance(answer,dict) or not isinstance(answer.get("target_mcIds"),list):
@@ -185,8 +206,13 @@ def rag(mc,facts,current,path=None):
     if os.getenv("RAG_ENABLED","true").lower()!="true" or not p.exists():return []
     q=set(re.findall(r"\w+",norm(" ".join(facts)))); rows=[]
     for line in p.read_text(encoding="utf8").splitlines():
-        x=json.loads(line)
-        if x.get("verified") is not True or x.get("origin")!="human_reviewed_author" or x.get("mcId")!=mc or norm(x.get("source_facts",""))==norm(current):continue
+        try:x=json.loads(line)
+        except json.JSONDecodeError:
+            logger.warning("Skipping malformed RAG entry")
+            continue
+        if not isinstance(x,dict) or x.get("verified") is not True or x.get("origin") not in {"human_reviewed_author","organizer_official_example"} or x.get("mcId")!=mc:continue
+        if not all(isinstance(x.get(k),str) and x[k].strip() for k in ("example_id","source_facts","approved_title","approved_text")):continue
+        if norm(x["source_facts"])==norm(current):continue
         t=set(re.findall(r"\w+",norm(x["source_facts"]))); score=len(q&t)/max(1,len(q|t))
         cur=set(re.findall(r"\w+",norm(current)))
         if len(t&cur)/max(1,len(t|cur))>=.9:continue
@@ -207,12 +233,16 @@ async def deepseek(messages):
             if estimated>remaining:raise RuntimeError("REQUEST_BUDGET_EXCEEDED")
             _REQUEST_BUDGET.set(remaining-estimated)
         try:
+            call_started=time.perf_counter()
             async with httpx.AsyncClient(timeout=float(os.getenv("DEEPSEEK_TIMEOUT_SECONDS","30"))) as c:
                 _PROVIDER_CALLS.set(_PROVIDER_CALLS.get()+1)
                 r=await c.post(url,headers={"Authorization":"Bearer "+key},json={"model":os.getenv("DEEPSEEK_MODEL","deepseek-flash"),"messages":messages,"temperature":.2,"max_tokens":int(os.getenv("DEEPSEEK_MAX_OUTPUT_TOKENS","1200")),"response_format":{"type":"json_object"},"thinking":{"type":"enabled" if os.getenv("DEEPSEEK_THINKING","false").lower()=="true" else "disabled"}})
             if r.status_code in (401,403):raise RuntimeError("DEEPSEEK_AUTH_ERROR")
             r.raise_for_status(); d=r.json(); content=d["choices"][0]["message"]["content"]
             if not content.strip() or d["choices"][0].get("finish_reason")=="length":raise ValueError("EMPTY_OR_TRUNCATED")
+            metrics=_PROVIDER_METRICS.get()
+            if metrics is not None:
+                metrics.append({"durationMs":round((time.perf_counter()-call_started)*1000,2),"usage":d.get("usage"),"estimatedCostUsd":estimate_cost(d.get("usage"))})
             return json.loads(content),d.get("usage"),d["choices"][0].get("finish_reason")
         except RuntimeError:raise
         except httpx.HTTPStatusError as exc:
@@ -222,16 +252,74 @@ async def deepseek(messages):
         except (httpx.TransportError,ValueError,KeyError,json.JSONDecodeError):
             if attempt>=int(os.getenv("DEEPSEEK_MAX_RETRIES","2")):raise RuntimeError("DEEPSEEK_REQUEST_FAILED") from None
             await __import__("asyncio").sleep(min(.4*2**attempt+random.random()*.1,2))
-def valid_text(description, generated, mc=None):
+async def deepseek_categories(messages):
+    """One category per provider call; share the request's accounting explicitly."""
+    payload=json.loads(messages[1]["content"])
+    field="targets" if "targets" in payload else "drafts"
+    items=payload.get(field,[])
+    if len(items)<=1 or os.getenv("GENERATION_REQUEST_MODE","per_category")=="batch":
+        return await deepseek(messages)
+    semaphore=asyncio.Semaphore(max(1,min(5,int(os.getenv("GENERATION_CONCURRENCY","5")))))
+    remaining=_REQUEST_BUDGET.get()
+    async def one(item):
+        child={**payload,field:[item]}
+        if "invalid_mcIds" in child:child["invalid_mcIds"]=[item["mcId"]]
+        if "rejected_drafts" in child:child["rejected_drafts"]=[d for d in child["rejected_drafts"] if d["mcId"]==item["mcId"]]
+        if "previous_rejections" in child:child["previous_rejections"]=[d for d in child["previous_rejections"] if d["mcId"]==item["mcId"]]
+        budget_token=_REQUEST_BUDGET.set(remaining/len(items) if remaining is not None else None)
+        calls_token=_PROVIDER_CALLS.set(0)
+        usage=None
+        try:
+            async with semaphore:
+                result,usage,finish=await deepseek([messages[0],{"role":"user","content":json.dumps(child,ensure_ascii=False)}])
+            records=result.get("drafts") if isinstance(result,dict) else None
+            if not isinstance(records,list) or len(records)!=1 or not isinstance(records[0],dict) or type(records[0].get("mcId")) is not int or records[0]["mcId"]!=item["mcId"]:
+                raise ValueError("category response mismatch")
+            if field=="targets":Output.model_validate({"drafts":records})
+            elif type(records[0].get("approved")) is not bool or not isinstance(records[0].get("unsupported_claims"),list) or not isinstance(records[0].get("wrong_category_claims"),list):
+                raise ValueError("invalid category verification")
+            return records,usage,_PROVIDER_CALLS.get(),_REQUEST_BUDGET.get()
+        except Exception:
+            failed={"mcId":item["mcId"],"title":None,"text":None} if field=="targets" else {"mcId":item["mcId"],"approved":False,"unsupported_claims":["Verification failed; retry required"],"wrong_category_claims":[]}
+            return [failed],usage,_PROVIDER_CALLS.get(),_REQUEST_BUDGET.get()
+        finally:
+            _REQUEST_BUDGET.reset(budget_token);_PROVIDER_CALLS.reset(calls_token)
+    results=await asyncio.gather(*(one(item) for item in items))
+    usage=None;drafts=[]
+    for records,tokens,_,_ in results:
+        drafts.extend(records);usage=combine_usage(usage,tokens)
+    _PROVIDER_CALLS.set(_PROVIDER_CALLS.get()+sum(r[2] for r in results))
+    if remaining is not None:_REQUEST_BUDGET.set(sum(r[3] for r in results))
+    return {"drafts":drafts},usage,"stop"
+
+def valid_text(description, generated, mc=None, semantic=False):
     title,text=generated.get("title"),generated.get("text")
     if not isinstance(title,str) or not isinstance(text,str) or not title.strip() or not text.strip():return None,None
     if len(title.strip())>255 or len(text.strip())>10000:return None,None
-    target_evidence=" ".join(x["text"] for x in evidence(description,mc)) if mc is not None else description
+    if semantic:
+        # Narrow regression checks supplement the semantic guard; category IDs
+        # alone never prove a service or authorize a more specific operation.
+        plaster=r"(?:штукатур\w*|оштукатур\w*)"
+        if mc==102:
+            if not re.search(plaster,norm(description)) or not re.search(plaster,norm(text)):
+                return None,None
+        if mc==106 and re.search(plaster,norm(title+" "+text)):
+            return None,None
+        # Meaning, scope, numbers and shared conditions are checked against the
+        # full source by the mandatory semantic guard, not substring rules.
+        sentences=[norm(x) for x in re.split(r"[.!?\n]+",text) if len(x.strip())>15]
+        if len(sentences)!=len(set(sentences)):return None,None
+        source_numbers=set(re.findall(r"\d+(?:[.,]\d+)?",description))
+        if any(n not in source_numbers for n in re.findall(r"\d+(?:[.,]\d+)?",title+" "+text)):return None,None
+        return title.strip(),text.strip()
+    if re.search(r"\b([а-яёa-z]{5,})\b(?:\W+\w+){0,2}\W+\1\b",norm(text),re.I):return None,None
+    target_evidence=" ".join(x["text"] for x in evidence(description,mc)+shared_evidence(description)) if mc is not None else description
     src=latin(norm(target_evidence)); out=latin(norm(title+" "+text))
-    claim_patterns=(r"garant\w*",r"skidk\w*",r"opyt\w*\s+\d+",r"\d+\s+let\s+opyt\w*",r"vyezd\w*",r"zakaz\w*.*otdel\w*",r"mozhno\s+.*otdel\w*",r"cena\s+ot\s+\d+",r"stoimost\s+ot\s+\d+",r"litsenzi\w*",r"rabot\w*\s+(?:v|po)\s+\w+",r"srok\w*",r"\d+\s+(?:dney|nedel\w*|mesyac\w*)",r"segodnya|zavtra")
-    for claim in claim_patterns:
-        for match in re.finditer(claim,out,re.I):
-            if not re.search(re.escape(match.group()),src,re.I):return None,None
+    claim_patterns=((r"garant\w*",r"garant\w*"),(r"skidk\w*",r"skidk\w*"),(r"opyt\w*\s+\d+",r"opyt\w*|stazh\w*"),(r"\d+\s+let\s+opyt\w*",r"opyt\w*|stazh\w*"),(r"vyezd\w*",r"vyezd\w*"),(r"zakaz\w*.*otdel\w*",r"otdel\w*"),(r"mozhno\s+.*otdel\w*",r"otdel\w*"),(r"cena\s+ot\s+\d+",r"cena\s+ot\s+\d+"),(r"stoimost\s+ot\s+\d+",r"stoimost\s+ot\s+\d+"),(r"litsenzi\w*",r"litsenzi\w*"),(r"srok\w*",r"srok\w*"),(r"\d+\s+(?:dney|nedel\w*|mesyac\w*)",r"\d+\s+(?:dney|nedel\w*|mesyac\w*)"),(r"segodnya|zavtra",r"segodnya|zavtra"))
+    for claim,support in claim_patterns:
+        if re.search(claim,out,re.I) and not re.search(support,src,re.I):return None,None
+    for match in re.finditer(r"rabot\w*\s+(?:v|po)\s+\w+",out,re.I):
+        if not re.search(re.escape(match.group()),src,re.I):return None,None
     # Numeric claims are especially risky: every amount/year/quantity must occur in source.
     for n in re.findall(r"\d+(?:[.,]\d+)?",out):
         if n not in src:return None,None
@@ -253,6 +341,16 @@ def estimate_cost(usage):
         out=usage.get("completion_tokens")
         return (inp+out*float(out_rate)/1e6) if out is not None else None
     except (ValueError,TypeError):return None
+def combine_usage(first,second):
+    if not first:return second
+    if not second:return first
+    return {key:(first.get(key,0) or 0)+(second.get(key,0) or 0)
+            for key in set(first)|set(second)
+            if isinstance(first.get(key,0),(int,float)) and isinstance(second.get(key,0),(int,float))}
+def parsed_drafts(result,targets):
+    validated=Output.model_validate(result)
+    if {d.mcId for d in validated.drafts} != set(targets):raise ValueError("missing or unexpected target")
+    return {d.mcId:d.model_dump() for d in validated.drafts}
 app=FastAPI(title="Avito AI",version="0.2.0")
 @app.exception_handler(RequestValidationError)
 async def validation_error(request,exc):
@@ -262,8 +360,9 @@ async def validation_error(request,exc):
 def live():return {"status":"live"}
 @app.get("/health/ready")
 def ready():
-    ok=MODEL is not None
-    return JSONResponse(status_code=200 if ok else 503,content={"status":"ready" if ok else "not_ready","classifier":ACTIVE_BACKEND if ok else (MODEL_LOAD_ERROR or "unavailable"),"generator":"deepseek-configured" if os.getenv("DEEPSEEK_API_KEY") else "degraded"})
+    evidence_mode=os.getenv("CLASSIFIER_MODE","cpu")=="evidence"
+    ok=evidence_mode or MODEL is not None
+    return JSONResponse(status_code=200 if ok else 503,content={"status":"ready" if ok else "not_ready","classifier":"evidence" if evidence_mode else (ACTIVE_BACKEND if ok else (MODEL_LOAD_ERROR or "unavailable")),"generator":"deepseek-configured" if os.getenv("DEEPSEEK_API_KEY") else "degraded"})
 @app.middleware("http")
 async def protect_and_trace(request:Request,call_next):
     token=os.getenv("INTERNAL_API_TOKEN")
@@ -273,11 +372,12 @@ async def protect_and_trace(request:Request,call_next):
     budget=os.getenv("MAX_REQUEST_USD")
     request_budget_token=_REQUEST_BUDGET.set(float(budget) if budget else None)
     calls_token=_PROVIDER_CALLS.set(0)
+    metrics_token=_PROVIDER_METRICS.set([])
     try:
         response=await call_next(request); response.headers["X-Request-ID"]=request.state.request_id
         return response
     finally:
-        _REQUEST_BUDGET.reset(request_budget_token); _PROVIDER_CALLS.reset(calls_token)
+        _REQUEST_BUDGET.reset(request_budget_token); _PROVIDER_CALLS.reset(calls_token); _PROVIDER_METRICS.reset(metrics_token)
 @app.post("/internal/v1/avito/classify",response_model=Output)
 def classify(body:Input):
     try:ids=predict(body.description,body.mcId)
@@ -288,7 +388,13 @@ async def create_drafts(body:Input,request:Request):
     rid=request.state.request_id; started=time.perf_counter(); t=time.perf_counter()
     mode=os.getenv("CLASSIFIER_MODE","cpu"); classification_calls=0; classification_usage=None; hybrid_fallback=False
     try:
-        if mode=="cpu":targets=predict(body.description,body.mcId)
+        if body.targetMcIds is not None:
+            if body.mcId!=101:return JSONResponse(status_code=422,content={"error":{"code":"SOURCE_MC_ID_MUST_BE_101"}})
+            targets=body.targetMcIds; mode="provided"
+        elif mode=="cpu":targets=predict(body.description,body.mcId)
+        elif mode=="evidence":
+            if body.mcId!=101:return JSONResponse(status_code=422,content={"error":{"code":"SOURCE_MC_ID_MUST_BE_101"}})
+            targets=[i for i in IDS if i!=101 and evidence(body.description,i)]
         elif mode=="deepseek":
             prompt=(ROOT/"app/prompts/classify_v1.txt").read_text(encoding="utf8")
             answer,classification_usage,_=await deepseek([{"role":"system","content":prompt},{"role":"user","content":json.dumps({"description":body.description,"source_mcId":body.mcId,"allowed_ids":list(IDS)},ensure_ascii=False)}]); classification_calls=1
@@ -306,62 +412,99 @@ async def create_drafts(body:Input,request:Request):
     except RuntimeError:return JSONResponse(status_code=503,content={"error":{"code":"CLASSIFIER_UNAVAILABLE"}})
     classification_ms=round((time.perf_counter()-t)*1000,2)
     if not targets:
-        diag={"requestId":rid,"classifier":mode,"localModel":ACTIVE_BACKEND,"targetMcIds":[],"ragExampleIds":{},"timingsMs":{"classification":classification_ms,"total":round((time.perf_counter()-started)*1000,2)},"apiCalls":_PROVIDER_CALLS.get(),"usage":classification_usage,"estimatedCostUsd":estimate_cost(classification_usage),"priceProfile":os.getenv("PRICE_PROFILE"),"warnings":[]}
+        diag={"requestId":rid,"classifier":mode,"localModel":ACTIVE_BACKEND,"targetMcIds":[],"ragExampleIds":{},"timingsMs":{"classification":classification_ms,"total":round((time.perf_counter()-started)*1000,2)},"apiCalls":_PROVIDER_CALLS.get(),"providerCalls":_PROVIDER_METRICS.get(),"usage":classification_usage,"estimatedCostUsd":estimate_cost(classification_usage),"priceProfile":os.getenv("PRICE_PROFILE"),"warnings":[]}
         app.state.diagnostics=getattr(app.state,"diagnostics",[])[-199:]+[diag]
         logger.info(json.dumps({k:v for k,v in diag.items() if k!="usage"},ensure_ascii=False))
         return {"drafts":[]}
     facts={i:evidence(body.description,i) for i in targets}; drafts=[]; rag_ids={}; usage=classification_usage; calls=classification_calls; warnings=["HYBRID_CPU_FALLBACK"] if hybrid_fallback else []
     entries=[]
     for i in targets:
-        if not facts[i]:continue
         examples=rag(i,[x["text"] for x in facts[i]],body.description); rag_ids[str(i)]=[x["example_id"] for x in examples]
-        entries.append({"mcId":i,"category":NAMES[i],"confirmed_services":[x["text"] for x in facts[i]],"evidence":facts[i],"rag_examples":examples})
+        entries.append({"mcId":i,"category":NAMES[i],"source_service_hints":[x["text"] for x in facts[i]],"evidence":facts[i],"shared_evidence":shared_evidence(body.description),"rag_examples":examples})
     generated_ok=False
     try:
         prompt=(ROOT/"app/prompts/generate_v1.txt").read_text(encoding="utf8")
         if os.getenv("GENERATOR_PROVIDER","deepseek")=="deepseek" and entries:
-            result,generation_usage,finish=await deepseek([{"role":"system","content":prompt},{"role":"user","content":json.dumps({"source_mcId":body.mcId,"targets":entries},ensure_ascii=False)}]); calls+=1; generated_ok=True
-            if usage and generation_usage:usage={k:(usage.get(k,0) or 0)+(generation_usage.get(k,0) or 0) for k in set(usage)|set(generation_usage)}
-            elif generation_usage:usage=generation_usage
-            by_id={x.get("mcId"):x for x in result.get("drafts",[]) if isinstance(x,dict)}
+            result,generation_usage,finish=await deepseek_categories([{"role":"system","content":prompt},{"role":"user","content":json.dumps({"source_mcId":body.mcId,"source_description":body.description,"targets":entries},ensure_ascii=False)}]); calls+=1; generated_ok=True
+            usage=combine_usage(usage,generation_usage)
+            by_id=parsed_drafts(result,targets)
             if finish=="length":by_id={}
         else:by_id={}
     except Exception:by_id={}; warnings.append("GENERATION_FAILED")
     # One bounded repair attempt applies only to invalid or missing drafts.
-    invalid=[i for i in targets if i not in by_id or valid_text(body.description,by_id[i],i)==(None,None)]
-    if invalid and generated_ok:
+    invalid=[i for i in targets if i not in by_id or valid_text(body.description,by_id[i],i,semantic=True)==(None,None)]
+    for _ in range(max(0,min(3,int(os.getenv("GUARDRAIL_RETRY_ATTEMPTS","2"))))):
+        if not invalid or not generated_ok:break
         try:
             repair=(ROOT/"app/prompts/repair_v1.txt").read_text(encoding="utf8")
-            fixed,repair_usage,repair_finish=await deepseek([{"role":"system","content":repair},{"role":"user","content":json.dumps({"targets":[x for x in entries if x["mcId"] in invalid],"invalid_mcIds":invalid},ensure_ascii=False)}]); calls+=1
-            if usage and repair_usage:
-                usage={k:(usage.get(k,0) or 0)+(repair_usage.get(k,0) or 0) for k in set(usage)|set(repair_usage)}
-            elif repair_usage:usage=repair_usage
-            by_id.update({x.get("mcId"):x for x in fixed.get("drafts",[]) if isinstance(x,dict) and x.get("mcId") in invalid})
+            fixed,repair_usage,repair_finish=await deepseek_categories([{"role":"system","content":repair},{"role":"user","content":json.dumps({"source_description":body.description,"targets":[x for x in entries if x["mcId"] in invalid],"invalid_mcIds":invalid,"validation_feedback":"Missing, null or structurally invalid draft. Re-read the full source, including named specialists in the team. Generate a short supported description; do not invent services."},ensure_ascii=False)}]); calls+=1
+            usage=combine_usage(usage,repair_usage)
+            by_id.update(parsed_drafts(fixed,invalid))
         except Exception:warnings.append("REPAIR_FAILED")
-    candidates={i:valid_text(body.description,by_id.get(i,{}),i) if i in facts and facts[i] else (None,None) for i in targets}
-    if os.getenv("CLAIM_VERIFIER_ENABLED","false").lower()=="true":
-        reviewable=[{"mcId":i,"evidence":facts[i],"title":pair[0],"text":pair[1]} for i,pair in candidates.items() if pair[0] is not None]
+        invalid=[i for i in invalid if valid_text(body.description,by_id.get(i,{}),i,semantic=True)==(None,None)]
+    candidates={i:valid_text(body.description,by_id.get(i,{}),i,semantic=True) for i in targets}
+    guardrail_regeneration_attempts=0; guardrail_recovered=[]
+    verify_enabled=os.getenv("GENERATOR_PROVIDER","deepseek")=="deepseek" and (mode=="provided" or os.getenv("CLAIM_VERIFIER_ENABLED","false").lower()=="true")
+    if verify_enabled:
+        reviewable=[{"mcId":i,"category":NAMES[i],"title":pair[0],"text":pair[1]} for i,pair in candidates.items() if pair[0] is not None]
         if reviewable:
+            review_validated=False
             try:
                 verifier_prompt=(ROOT/"app/prompts/verify_claims_v1.txt").read_text(encoding="utf8")
-                review,review_usage,_=await deepseek([{"role":"system","content":verifier_prompt},{"role":"user","content":json.dumps({"source_description":body.description,"drafts":reviewable},ensure_ascii=False)}]); calls+=1
-                if usage and review_usage:usage={k:(usage.get(k,0) or 0)+(review_usage.get(k,0) or 0) for k in set(usage)|set(review_usage)}
-                elif review_usage:usage=review_usage
+                review,review_usage,_=await deepseek_categories([{"role":"system","content":verifier_prompt},{"role":"user","content":json.dumps({"source_description":body.description,"drafts":reviewable},ensure_ascii=False)}]); calls+=1
+                usage=combine_usage(usage,review_usage)
                 reviewed=review.get("drafts") if isinstance(review,dict) else None
                 if not isinstance(reviewed,list):raise ValueError("invalid verifier schema")
+                if len(reviewed)!=len(reviewable) or any(not isinstance(x,dict) or type(x.get('mcId')) is not int for x in reviewed) or {x['mcId'] for x in reviewed}!={x['mcId'] for x in reviewable}:raise ValueError("verifier target mismatch")
+                review_validated=True
                 by_review={x.get("mcId"):x for x in reviewed if isinstance(x,dict) and type(x.get("mcId")) is int}
+                rejected=[]
                 for i in reviewable:
                     item=by_review.get(i["mcId"])
                     approved=(isinstance(item,dict) and item.get("approved") is True and item.get("unsupported_claims")==[] and item.get("wrong_category_claims")==[])
-                    if not approved:candidates[i["mcId"]]=(None,None);warnings.append(f"CLAIM_REJECTED_{i['mcId']}")
+                    if not approved:
+                        rejected.append({**i,"review":item})
+                        candidates[i["mcId"]]=(None,None);warnings.append(f"CLAIM_REJECTED_{i['mcId']}")
+                max_regenerations=max(0,min(3,int(os.getenv("GUARDRAIL_RETRY_ATTEMPTS","2"))))
+                original_rejections=list(rejected)
+                repair=(ROOT/"app/prompts/repair_v1.txt").read_text(encoding="utf8")
+                for _ in range(max_regenerations):
+                    if not rejected:break
+                    guardrail_regeneration_attempts+=1
+                    pending_ids={d['mcId'] for d in rejected}
+                    fixed,u,_=await deepseek_categories([{"role":"system","content":repair},{"role":"user","content":json.dumps({"source_description":body.description,"targets":[x for x in entries if x['mcId'] in pending_ids],"invalid_mcIds":sorted(pending_ids),"rejected_drafts":rejected},ensure_ascii=False)}])
+                    usage=combine_usage(usage,u)
+                    replacements=[]; next_rejected=[]
+                    for item in parsed_drafts(fixed,pending_ids).values():
+                        pair=valid_text(body.description,item,item['mcId'],semantic=True)
+                        if pair[0]:replacements.append({"mcId":item['mcId'],"category":NAMES[item['mcId']],"title":pair[0],"text":pair[1]})
+                    replacement_ids={item['mcId'] for item in replacements}
+                    for old in rejected:
+                        if old['mcId'] not in replacement_ids:
+                            next_rejected.append({**old,"review":{"approved":False,"unsupported_claims":["Повторная генерация не дала корректного текста для этой категории"],"wrong_category_claims":[]}})
+                    if replacements:
+                        final_review,u,_=await deepseek_categories([{"role":"system","content":verifier_prompt},{"role":"user","content":json.dumps({"source_description":body.description,"drafts":replacements,"previous_rejections":[x for x in original_rejections if x['mcId'] in replacement_ids]},ensure_ascii=False)}])
+                        usage=combine_usage(usage,u)
+                        reviewed_again=final_review.get('drafts') if isinstance(final_review,dict) else None
+                        if not isinstance(reviewed_again,list) or len(reviewed_again)!=len(replacements) or any(not isinstance(x,dict) or type(x.get('mcId')) is not int for x in reviewed_again) or {x['mcId'] for x in reviewed_again}!={x['mcId'] for x in replacements}:
+                            raise ValueError("verifier target mismatch")
+                        by_final={x['mcId']:x for x in reviewed_again}
+                        for item in replacements:
+                            verdict=by_final[item['mcId']]
+                            if verdict.get('approved') is True and verdict.get('unsupported_claims')==[] and verdict.get('wrong_category_claims')==[]:
+                                candidates[item['mcId']]=(item['title'],item['text']);guardrail_recovered.append(item['mcId'])
+                            else:
+                                next_rejected.append({**item,"review":verdict})
+                    rejected=next_rejected
             except Exception:
-                candidates={i:(None,None) for i in targets};warnings.append("CLAIM_VERIFICATION_FAILED")
+                if not review_validated:candidates={i:(None,None) for i in targets}
+                warnings.append("CLAIM_REPAIR_FAILED" if review_validated else "CLAIM_VERIFICATION_FAILED")
     for i,(title,text) in candidates.items():
         if title is None:warnings.append(f"GENERATION_INVALID_{i}")
         drafts.append({"mcId":i,"title":title,"text":text})
     timing={"classification":classification_ms,"total":round((time.perf_counter()-started)*1000,2)}
     cost=estimate_cost(usage)
-    diag={"requestId":rid,"classifier":mode,"localModel":ACTIVE_BACKEND,"generator":os.getenv("DEEPSEEK_MODEL","deepseek-flash"),"claimVerifier":"enabled" if os.getenv("CLAIM_VERIFIER_ENABLED","false").lower()=="true" else "disabled","targetMcIds":targets,"ragExampleIds":rag_ids,"timingsMs":timing,"apiCalls":_PROVIDER_CALLS.get(),"usage":usage,"estimatedCostUsd":cost,"priceProfile":os.getenv("PRICE_PROFILE"),"warnings":warnings}
+    diag={"requestId":rid,"classifier":mode,"localModel":ACTIVE_BACKEND,"generator":os.getenv("DEEPSEEK_MODEL","deepseek-flash"),"claimVerifier":"enabled" if verify_enabled else "disabled","guardrailRegenerationAttempts":guardrail_regeneration_attempts,"guardrailRecoveredMcIds":sorted(set(guardrail_recovered)),"targetMcIds":targets,"ragExampleIds":rag_ids,"timingsMs":timing,"apiCalls":_PROVIDER_CALLS.get(),"providerCalls":_PROVIDER_METRICS.get(),"usage":usage,"estimatedCostUsd":cost,"priceProfile":os.getenv("PRICE_PROFILE"),"warnings":warnings}
     app.state.diagnostics=getattr(app.state,"diagnostics",[])[-199:]+[diag]
     logger.info(json.dumps(diag,ensure_ascii=False))
     return {"drafts":drafts}

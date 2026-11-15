@@ -15,7 +15,7 @@ for no,line in enumerate(path.read_text(encoding="utf8").splitlines(),1):
     if type(x["mcId"]) is not int or x["mcId"] not in range(101,107):errors.append(f"line {no}: invalid mcId")
     if type(x["verified"]) is not bool:errors.append(f"line {no}: verified must be boolean")
     if not isinstance(x["version"],str) or not x["version"].strip():errors.append(f"line {no}: invalid version")
-    if x["verified"] is True and x["origin"]!="human_reviewed_author":errors.append(f"line {no}: unapproved verified origin")
+    if x["verified"] is True and x["origin"] not in {"human_reviewed_author","organizer_official_example"}:errors.append(f"line {no}: unapproved verified origin")
     if x["verified"] is True:
         verified+=1
         valid_content=all(isinstance(x[k],str) and x[k].strip() for k in ("source_facts","approved_title","approved_text"))
