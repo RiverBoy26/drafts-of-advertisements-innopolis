@@ -33,7 +33,6 @@ public class AnalysisController {
     private static final int ORIGINAL_MC_ID = 101;
 
     private static final long MAX_FILE_SIZE = 2 * 1024 * 1024;
-    private static final int MAX_RECORDS = 100;
 
     private static final Path CSV_STORAGE =
             Path.of("data", "csv-files").toAbsolutePath().normalize();
@@ -351,11 +350,6 @@ public class AnalysisController {
                         "title", title,
                         "description", description
                 ));
-
-                if (records.size() > MAX_RECORDS) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                            "CSV должен содержать не более " + MAX_RECORDS + " объявлений");
-                }
             }
 
         } catch (IOException | UncheckedIOException e) {
