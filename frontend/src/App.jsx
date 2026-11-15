@@ -7,6 +7,7 @@ import {
   X, AlertCircle, Eye, EyeOff, SlidersHorizontal, Clock3, Plus,
 } from 'lucide-react';
 import { analyzeText, deleteAllDrafts, deleteDraft as removeDraft, listDrafts, login, logout, register, updateDraft } from './api.js';
+import { MAX_DESCRIPTION_LENGTH, parseCsv } from './csv.js';
 
 const MICROCATEGORIES = [
   { mcId: 101, name: 'Ремонт под ключ' },
@@ -30,110 +31,6 @@ const pluralRu = (count, one, few, many) => {
   if (mod10 >= 2 && mod10 <= 4) return few;
   return many;
 };
-
-// CSV-парсер. Поддерживает запятую и точку с запятой,
-// текст в кавычках и переносы строк.
-function parseCsv(content) {
-  const source = content.replace(/^\uFEFF/, '');
-  const firstLine = source.split(/\r?\n/).find(line => line.trim()) || '';
-  const separator = firstLine.includes(';') ? ';' : ',';
-
-  const rows = [];
-  let currentRow = [];
-  let value = '';
-  let quoted = false;
-
-  const finishValue = () => {
-    currentRow.push(value);
-    value = '';
-  };
-
-  const finishRow = () => {
-    finishValue();
-
-    if (currentRow.some(cell => cell.trim())) {
-      rows.push(currentRow);
-    }
-
-    currentRow = [];
-  };
-
-  for (let i = 0; i < source.length; i++) {
-    const ch = source[i];
-
-    if (ch === '"') {
-      if (quoted && source[i + 1] === '"') {
-        value += '"';
-        i++;
-      } else {
-        quoted = !quoted;
-      }
-    } else if (ch === separator && !quoted) {
-      finishValue();
-    } else if ((ch === '\n' || ch === '\r') && !quoted) {
-      if (ch === '\r' && source[i + 1] === '\n') {
-        i++;
-      }
-
-      finishRow();
-    } else {
-      value += ch;
-    }
-  }
-
-  if (quoted) {
-    throw new Error('В CSV есть незакрытые кавычки.');
-  }
-
-  if (value || currentRow.length) {
-    finishRow();
-  }
-
-  if (rows.length < 2) {
-    throw new Error(
-      'CSV должен содержать заголовки и хотя бы одну строку данных.'
-    );
-  }
-
-  const headers = rows[0].map(v => v.trim().toLowerCase());
-
-  const idIndex = headers.findIndex(h =>
-    ['id', 'ид'].includes(h)
-  );
-
-  const descriptionIndex = headers.findIndex(h =>
-    ['description', 'описание', 'text', 'текст'].includes(h)
-  );
-
-  if (idIndex < 0 || descriptionIndex < 0) {
-    throw new Error(
-      'В CSV нужны два столбца: id и description.'
-    );
-  }
-
-  const seenIds = new Set();
-
-  const records = rows.slice(1).map((cols, index) => {
-    const id = (cols[idIndex] || '').trim();
-    const description = (cols[descriptionIndex] || '').trim();
-
-    if (!id || !description) {
-      throw new Error(
-        `В строке ${index + 2} не заполнен id или description.`
-      );
-    }
-
-    if (seenIds.has(id)) {
-      throw new Error(`Повторяется id «${id}».`);
-    }
-
-    seenIds.add(id);
-
-    return { id, description };
-  });
-
-  return records;
-}
 
 function Logo({ small = false }) {
   return (
@@ -561,6 +458,21 @@ function OverviewPage({
     }
   };
 
+  const analyzeButton = (
+    <Button
+      className="analyze-button"
+      variant="primary"
+      onClick={onAnalyze}
+      disabled={analyzing || (inputMode === 'text'
+        ? description.trim().length < 12
+        : records.length === 0)}
+    >
+      <Sparkles size={19} />
+      {analyzing ? 'Анализируем…' : 'Анализировать'}
+      <ArrowRight size={17} />
+    </Button>
+  );
+
   return (
     <div className="create-page">
       <div className="page-heading">
@@ -661,7 +573,7 @@ function OverviewPage({
               </Button>
 
               <span className="upload-format">
-                Столбцы: id, description
+                Столбцы: id, description или testcase, description
               </span>
             </div>
 
@@ -671,6 +583,10 @@ function OverviewPage({
                 {fileError}
               </p>
             )}
+
+            <div className="input-panel-footer">
+              {analyzeButton}
+            </div>
 
             {records.length > 0 && (
               <div className="csv-preview">
@@ -700,6 +616,12 @@ function OverviewPage({
                     <X size={18} />
                   </button>
                 </div>
+
+                {records.some(record => record.description.length > MAX_DESCRIPTION_LENGTH) && (
+                  <p className="csv-more" role="status">
+                    {records.filter(record => record.description.length > MAX_DESCRIPTION_LENGTH).length} описаний длиннее {MAX_DESCRIPTION_LENGTH.toLocaleString('ru-RU')} символов. При анализе будет использовано начало каждого из них до этого лимита.
+                  </p>
+                )}
 
                 <div className="csv-table-scroll">
                   <table className="csv-table">
@@ -731,22 +653,11 @@ function OverviewPage({
           </div>
         )}
 
-        <div className="input-panel-footer">
-          <Button
-            className="analyze-button"
-            variant="primary"
-            onClick={onAnalyze}
-            disabled={
-              analyzing || (inputMode === 'text'
-                ? description.trim().length < 12
-                : records.length === 0)
-            }
-          >
-            <Sparkles size={19} />
-            {analyzing ? 'Анализируем…' : 'Анализировать'}
-            <ArrowRight size={17} />
-          </Button>
-        </div>
+        {inputMode === 'text' && (
+          <div className="input-panel-footer">
+            {analyzeButton}
+          </div>
+        )}
 
         {error && (
           <p role="alert" className="inline-error">
@@ -1315,7 +1226,7 @@ function App() {
 
     const sourceRows = inputMode === 'text'
       ? [{ id: '1', description: description.trim() }]
-      : records;
+      : records.map(row => ({ ...row, description: row.description.slice(0, MAX_DESCRIPTION_LENGTH).trim() }));
 
     if (!sourceRows.length || sourceRows.some(row => row.description.length < 12)) {
       setError('Введите описание не короче 12 символов или загрузите корректный CSV.');
