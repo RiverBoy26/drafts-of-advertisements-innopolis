@@ -131,10 +131,10 @@ def predict(text,source,model=None,threshold=.35):
 PATTERNS={
 101:r"remont\w*.*pod\s+kluc|kompleksn\w* remont|kapitaln\w* remont",
 102:r"stukatur\w*|oshtukatur\w*|vyravniv\w* sten",
-103:r"plitk\w*|plitocn\w*|plitochn\w*|keramogranit\w*|mozaik\w*|zatirk\w*",
+103:r"plitk\w*|plitocn\w*|plitochn\w*|keramogranit\w*|mozaik\w*|zatirk\w*|kafel\w*",
 104:r"santehnik\w*|santehn\w*|santehnic\w*|trub\w*|smesitel\w*|rakovin\w*|unitaz\w*|kanaliz\w*|vodosnab\w*|sliv\w*",
 105:r"elektr\w*|provodk\w*|kabel\w*|rozet\w*|vyklyuchatel\w*|elektromontazh\w*|osveshchen\w*|elektroset\w*",
-106:r"obo\w*|kras\w*|pokras\w*|poklei\w*|spaklev\w*|spatlev\w*|shpaklev\w*|shpatlev\w*|malyar\w*|gruntov\w*|shlifovan\w*"}
+106:r"obo\w*|kras\w*|pokras\w*|poklei\w*|spakl\w*|spatl\w*|shpakl\w*|shpatl\w*|malyar\w*|malar\w*|gruntov\w*|shlifovan\w*"}
 NEG=r"(?:ne\s+(?:dela\w*|vypoln\w*|okazyv\w*|zanim\w*|bud\w*|predlag\w*|men\w*|menau\w*|uklad\w*|montir\w*|ustanav\w*|stukatur\w*|kle\w*|poklei\w*|spaklev\w*|spatlev\w*|slifov\w*|gruntov\w*|kras\w*)|ne\s+nashi|drug\w* podradcik|podradcik|podryadchik\s+ne\s+my|ran\w* delal|ran\w* zanim|bolshe\s+ne\s+(?:dela|prinima))"
 EXCEPTION=r"(?:krome|iskluc\w*|za\s+iskluc\w*)"
 EXCEPTION_FILLER=r"(?:vse\w*|rabot\w*|uslug\w*|remont\w*|po|uklad\w*|montaz\w*|ustanov\w*)"
@@ -195,6 +195,28 @@ def evidence(text,mc):
             if re.search(r"ispolzuy\w*.*kak\s+material|material\w*",part,re.I): continue
             result.append({"text":text[start:end],"start":start,"end":end})
     return result
+def offered_service_text(description):
+    """Exclude obvious search-keyword tails while preserving real service lists."""
+    lines=[]
+    for line in description.splitlines():
+        if re.search(r"(?i)^\s*(?:🔎\s*)?(?:нас также ищут|поисковые запросы|ключевые слова)\s*[:：]?\s*$",line):
+            break
+        if line.count(",")>=10 and not re.search(r"(?i)\b(?:выполня\w*|дела\w*|укладыва\w*|монтир\w*|устанавлива\w*|покле\w*|крашу)\b",line):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+def target_offer_supported(description,mc):
+    """A narrow sanity check for classifier-provided categories, not a classifier."""
+    offered=offered_service_text(description)
+    if mc==102 and not re.search(r"(?:штукатур\w*|оштукатур\w*)",norm(offered)):
+        return False
+    if mc==104:
+        # Ceramic products and tiled utility cabinets are not plumbing work.
+        offered=re.sub(r"(?i)сантех[- ]?шкаф\w*","",offered)
+        offered="\n".join(line for line in offered.splitlines()
+                          if not (re.search(r"(?i)изделия\s+из\s+керамогранита",line)
+                                  and not re.search(r"(?i)установ\w*|монтаж\w*|подключ\w*",line)))
+    return bool(evidence(offered,mc))
 def shared_evidence(text):
     """Explicit provider-wide facts that can be reused without inventing category details."""
     result=[]
@@ -263,12 +285,12 @@ async def deepseek(messages):
         except (httpx.TransportError,ValueError,KeyError,json.JSONDecodeError):
             if attempt>=int(os.getenv("DEEPSEEK_MAX_RETRIES","2")):raise RuntimeError("DEEPSEEK_REQUEST_FAILED") from None
             await __import__("asyncio").sleep(min(.4*2**attempt+random.random()*.1,2))
-async def deepseek_categories(messages):
-    """One category per provider call; share the request's accounting explicitly."""
+async def deepseek_categories(messages, per_category=False):
+    """Generate in one call; split only targeted repairs and account for each call."""
     payload=json.loads(messages[1]["content"])
     field="targets" if "targets" in payload else "drafts"
     items=payload.get(field,[])
-    if len(items)<=1 or os.getenv("GENERATION_REQUEST_MODE","per_category")=="batch":
+    if len(items)<=1 or (os.getenv("GENERATION_REQUEST_MODE","batch")=="batch" and not per_category):
         return await deepseek(messages)
     semaphore=asyncio.Semaphore(max(1,min(5,int(os.getenv("GENERATION_CONCURRENCY","5")))))
     remaining=_REQUEST_BUDGET.get()
@@ -362,6 +384,10 @@ def parsed_drafts(result,targets):
     validated=Output.model_validate(result)
     if {d.mcId for d in validated.drafts} != set(targets):raise ValueError("missing or unexpected target")
     return {d.mcId:d.model_dump() for d in validated.drafts}
+def presentation_style(description):
+    emojis=list(dict.fromkeys(re.findall(r"[\U0001F300-\U0001FAFF✅🔹]",description)))
+    return {"source_has_emojis":bool(emojis),"source_emoji_examples":emojis[:3],
+            "source_has_bullet_list":bool(re.search(r"(?m)^\s*(?:[•\-✅🔹]|\d+[.)])\s*\S",description))}
 app=FastAPI(title="Avito AI",version="0.2.0")
 @app.exception_handler(RequestValidationError)
 async def validation_error(request,exc):
@@ -427,33 +453,38 @@ async def create_drafts(body:Input,request:Request):
         app.state.diagnostics=getattr(app.state,"diagnostics",[])[-199:]+[diag]
         logger.info(json.dumps({k:v for k,v in diag.items() if k!="usage"},ensure_ascii=False))
         return {"drafts":[]}
-    facts={i:evidence(body.description,i) for i in targets}; drafts=[]; rag_ids={}; usage=classification_usage; calls=classification_calls; warnings=["HYBRID_CPU_FALLBACK"] if hybrid_fallback else []
+    # Classifier-provided labels are candidates; do not spend provider calls
+    # on categories with no service evidence in the author's offer.
+    unsupported_target_ids=[i for i in targets if not target_offer_supported(body.description,i)]
+    generation_targets=[i for i in targets if i not in unsupported_target_ids]
+    facts={i:evidence(body.description,i) for i in generation_targets}; drafts=[]; rag_ids={}; usage=classification_usage; calls=classification_calls; warnings=["HYBRID_CPU_FALLBACK"] if hybrid_fallback else []
+    warnings.extend(f"TARGET_UNSUPPORTED_{i}" for i in unsupported_target_ids)
     entries=[]
-    for i in targets:
+    for i in generation_targets:
         examples=rag(i,[x["text"] for x in facts[i]],body.description); rag_ids[str(i)]=[x["example_id"] for x in examples]
         entries.append({"mcId":i,"category":NAMES[i],"source_service_hints":[x["text"] for x in facts[i]],"evidence":facts[i],"shared_evidence":shared_evidence(body.description),"rag_examples":examples})
     generated_ok=False
     try:
         prompt=(ROOT/"app/prompts/generate_v1.txt").read_text(encoding="utf8")
         if os.getenv("GENERATOR_PROVIDER","deepseek")=="deepseek" and entries:
-            result,generation_usage,finish=await deepseek_categories([{"role":"system","content":prompt},{"role":"user","content":json.dumps({"source_mcId":body.mcId,"source_description":body.description,"targets":entries},ensure_ascii=False)}]); calls+=1; generated_ok=True
+            result,generation_usage,finish=await deepseek_categories([{"role":"system","content":prompt},{"role":"user","content":json.dumps({"source_mcId":body.mcId,"source_description":body.description,"presentation":presentation_style(body.description),"targets":entries},ensure_ascii=False)}]); calls+=1; generated_ok=True
             usage=combine_usage(usage,generation_usage)
-            by_id=parsed_drafts(result,targets)
+            by_id=parsed_drafts(result,generation_targets)
             if finish=="length":by_id={}
         else:by_id={}
     except Exception:by_id={}; warnings.append("GENERATION_FAILED")
     # One bounded repair attempt applies only to invalid or missing drafts.
-    invalid=[i for i in targets if i not in by_id or valid_text(body.description,by_id[i],i,semantic=True)==(None,None)]
+    invalid=[i for i in generation_targets if i not in by_id or valid_text(body.description,by_id[i],i,semantic=True)==(None,None)]
     for _ in range(max(0,min(3,int(os.getenv("GUARDRAIL_RETRY_ATTEMPTS","2"))))):
         if not invalid or not generated_ok:break
         try:
             repair=(ROOT/"app/prompts/repair_v1.txt").read_text(encoding="utf8")
-            fixed,repair_usage,repair_finish=await deepseek_categories([{"role":"system","content":repair},{"role":"user","content":json.dumps({"source_description":body.description,"targets":[x for x in entries if x["mcId"] in invalid],"invalid_mcIds":invalid,"validation_feedback":"Missing, null or structurally invalid draft. Re-read the full source, including named specialists in the team. Generate a short supported description; do not invent services."},ensure_ascii=False)}]); calls+=1
+            fixed,repair_usage,repair_finish=await deepseek_categories([{"role":"system","content":repair},{"role":"user","content":json.dumps({"source_description":body.description,"presentation":presentation_style(body.description),"targets":[x for x in entries if x["mcId"] in invalid],"invalid_mcIds":invalid,"validation_feedback":"Missing, null or structurally invalid draft. Re-read the full source, including named specialists in the team. Generate a short supported description; do not invent services."},ensure_ascii=False)}],per_category=True); calls+=1
             usage=combine_usage(usage,repair_usage)
             by_id.update(parsed_drafts(fixed,invalid))
         except Exception:warnings.append("REPAIR_FAILED")
         invalid=[i for i in invalid if valid_text(body.description,by_id.get(i,{}),i,semantic=True)==(None,None)]
-    candidates={i:valid_text(body.description,by_id.get(i,{}),i,semantic=True) for i in targets}
+    candidates={i:valid_text(body.description,by_id.get(i,{}),i,semantic=True) for i in generation_targets}
     guardrail_regeneration_attempts=0; guardrail_recovered=[]
     verify_enabled=os.getenv("GENERATOR_PROVIDER","deepseek")=="deepseek" and (mode=="provided" or os.getenv("CLAIM_VERIFIER_ENABLED","false").lower()=="true")
     if verify_enabled:
@@ -483,7 +514,7 @@ async def create_drafts(body:Input,request:Request):
                     if not rejected:break
                     guardrail_regeneration_attempts+=1
                     pending_ids={d['mcId'] for d in rejected}
-                    fixed,u,_=await deepseek_categories([{"role":"system","content":repair},{"role":"user","content":json.dumps({"source_description":body.description,"targets":[x for x in entries if x['mcId'] in pending_ids],"invalid_mcIds":sorted(pending_ids),"rejected_drafts":rejected},ensure_ascii=False)}])
+                    fixed,u,_=await deepseek_categories([{"role":"system","content":repair},{"role":"user","content":json.dumps({"source_description":body.description,"presentation":presentation_style(body.description),"targets":[x for x in entries if x['mcId'] in pending_ids],"invalid_mcIds":sorted(pending_ids),"rejected_drafts":rejected},ensure_ascii=False)}],per_category=True)
                     usage=combine_usage(usage,u)
                     replacements=[]; next_rejected=[]
                     for item in parsed_drafts(fixed,pending_ids).values():
@@ -508,14 +539,14 @@ async def create_drafts(body:Input,request:Request):
                                 next_rejected.append({**item,"review":verdict})
                     rejected=next_rejected
             except Exception:
-                if not review_validated:candidates={i:(None,None) for i in targets}
+                if not review_validated:candidates={i:(None,None) for i in generation_targets}
                 warnings.append("CLAIM_REPAIR_FAILED" if review_validated else "CLAIM_VERIFICATION_FAILED")
     for i,(title,text) in candidates.items():
-        if title is None:warnings.append(f"GENERATION_INVALID_{i}")
+        if title is None and i not in unsupported_target_ids:warnings.append(f"GENERATION_INVALID_{i}")
         drafts.append({"mcId":i,"title":title,"text":text})
     timing={"classification":classification_ms,"total":round((time.perf_counter()-started)*1000,2)}
     cost=estimate_cost(usage)
-    diag={"requestId":rid,"classifier":mode,"localModel":ACTIVE_BACKEND,"generator":os.getenv("DEEPSEEK_MODEL","deepseek-flash"),"claimVerifier":"enabled" if verify_enabled else "disabled","guardrailRegenerationAttempts":guardrail_regeneration_attempts,"guardrailRecoveredMcIds":sorted(set(guardrail_recovered)),"targetMcIds":targets,"ragExampleIds":rag_ids,"timingsMs":timing,"apiCalls":_PROVIDER_CALLS.get(),"providerCalls":_PROVIDER_METRICS.get(),"usage":usage,"estimatedCostUsd":cost,"priceProfile":os.getenv("PRICE_PROFILE"),"warnings":warnings}
+    diag={"requestId":rid,"classifier":mode,"localModel":ACTIVE_BACKEND,"generator":os.getenv("DEEPSEEK_MODEL","deepseek-flash"),"claimVerifier":"enabled" if verify_enabled else "disabled","guardrailRegenerationAttempts":guardrail_regeneration_attempts,"guardrailRecoveredMcIds":sorted(set(guardrail_recovered)),"targetMcIds":targets,"acceptedTargetMcIds":generation_targets,"unsupportedTargetMcIds":unsupported_target_ids,"ragExampleIds":rag_ids,"timingsMs":timing,"apiCalls":_PROVIDER_CALLS.get(),"providerCalls":_PROVIDER_METRICS.get(),"usage":usage,"estimatedCostUsd":cost,"priceProfile":os.getenv("PRICE_PROFILE"),"warnings":warnings}
     app.state.diagnostics=getattr(app.state,"diagnostics",[])[-199:]+[diag]
     logger.info(json.dumps(diag,ensure_ascii=False))
     return {"drafts":drafts}

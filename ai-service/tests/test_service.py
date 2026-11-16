@@ -3,6 +3,54 @@ from fastapi.testclient import TestClient
 from app.main import app, Input, evidence, rag, valid_text, predict, estimate_cost
 
 client=TestClient(app)
+def test_provided_unsupported_plaster_is_filtered_without_api_calls(monkeypatch):
+    import app.main as service
+    monkeypatch.setenv('GENERATOR_PROVIDER','deepseek')
+    async def unexpected(_):
+        raise AssertionError('unsupported plaster target must not reach DeepSeek')
+    monkeypatch.setattr(service,'deepseek',unexpected)
+    request_id='unsupported-plaster-test'
+    r=client.post('/internal/v1/avito/drafts',headers={'X-Request-ID':request_id},
+                  json={'description':'Делаю шпаклёвку стен и покраску.','mcId':101,'targetMcIds':[102]})
+    assert r.status_code==200
+    assert r.json()['drafts']==[]
+    diag=client.get('/internal/v1/avito/debug/last',headers={'X-Request-ID':request_id}).json()
+    assert diag['unsupportedTargetMcIds']==[102]
+    assert diag['apiCalls']==0
+    assert diag['warnings']==['TARGET_UNSUPPORTED_102']
+
+def test_unsupported_plaster_does_not_block_supported_sibling(monkeypatch):
+    import json, app.main as service
+    monkeypatch.setenv('GENERATOR_PROVIDER','deepseek')
+    calls=[]
+    async def fake(messages):
+        calls.append(messages)
+        payload=json.loads(messages[1]['content'])
+        if 'targets' in payload:
+            assert [x['mcId'] for x in payload['targets']]==[106]
+            return {'drafts':[{'mcId':106,'title':'Шпаклёвка стен','text':'Шпаклюю стены.'}]},None,'stop'
+        assert [x['mcId'] for x in payload['drafts']]==[106]
+        return {'drafts':[{'mcId':106,'approved':True,'unsupported_claims':[],'wrong_category_claims':[]}]},None,'stop'
+    monkeypatch.setattr(service,'deepseek',fake)
+    r=client.post('/internal/v1/avito/drafts',json={'description':'Шпаклюю стены.','mcId':101,'targetMcIds':[102,106]})
+    assert r.status_code==200
+    assert r.json()['drafts']==[{'mcId':106,'title':'Шпаклёвка стен','text':'Шпаклюю стены.'}]
+    assert len(calls)==2
+
+def test_verifier_failure_does_not_restore_filtered_category(monkeypatch):
+    import app.main as service
+    monkeypatch.setenv('GENERATOR_PROVIDER','deepseek')
+    calls=[]
+    async def fake(messages):
+        calls.append(messages)
+        if len(calls)==1:
+            return {'drafts':[{'mcId':106,'title':'Шпаклёвка стен','text':'Шпаклюю стены.'}]},None,'stop'
+        raise RuntimeError('verifier unavailable')
+    monkeypatch.setattr(service,'deepseek',fake)
+    r=client.post('/internal/v1/avito/drafts',json={'description':'Шпаклюю стены.','mcId':101,'targetMcIds':[102,106]})
+    assert r.status_code==200
+    assert r.json()['drafts']==[{'mcId':106,'title':None,'text':None}]
+
 def test_semantic_repair_failure_preserves_approved_sibling(monkeypatch):
     monkeypatch.setenv("GENERATION_REQUEST_MODE","batch")
     import app.main as service
@@ -53,7 +101,6 @@ def test_guardrail_regenerates_rejected_category_twice_with_feedback(monkeypatch
 def test_provided_categories_skip_evidence_selection_and_force_guard(monkeypatch):
     import app.main as service
     monkeypatch.setattr(service,'MODEL',None)
-    monkeypatch.setattr(service,'evidence',lambda *args: [])
     monkeypatch.setenv('GENERATOR_PROVIDER','deepseek')
     monkeypatch.setenv('CLAIM_VERIFIER_ENABLED','false')
     calls=[]
@@ -66,27 +113,35 @@ def test_provided_categories_skip_evidence_selection_and_force_guard(monkeypatch
     r=client.post('/internal/v1/avito/drafts',json={'description':'Укладываю кафель. Работаем по договору.','mcId':101,'targetMcIds':[103]})
     assert r.status_code==200 and r.json()['drafts'][0]['text']
     assert len(calls)==2
-def test_classifier_targets_reach_generator_even_without_keyword_evidence(monkeypatch):
+def test_classifier_target_without_service_evidence_is_filtered(monkeypatch):
     import app.main as service
     class Classifier:
         def predict_proba(self,items):return [[.01,.95,.01,.01,.01]]
     monkeypatch.setattr(service,'MODEL',{'model':Classifier(),'class_ids':(102,103,104,105,106),'threshold':.35})
-    monkeypatch.setattr(service,'evidence',lambda *args: [])
     monkeypatch.setenv('CLASSIFIER_MODE','cpu')
     monkeypatch.setenv('GENERATOR_PROVIDER','deepseek')
     monkeypatch.setenv('CLAIM_VERIFIER_ENABLED','true')
     seen=[]
     async def fake(messages):
         seen.append(messages)
-        if 'Ты пишешь' in messages[0]['content']:
-            assert 'source_description' in messages[1]['content']
-            assert '"mcId": 103' in messages[1]['content']
-            return {'drafts':[{'mcId':103,'title':'Укладка кафеля','text':'Укладываю кафель.'}]},None,'stop'
-        return {'drafts':[{'mcId':103,'approved':True,'unsupported_claims':[],'wrong_category_claims':[]}]},None,'stop'
+        raise AssertionError('unsupported category must not reach DeepSeek')
     monkeypatch.setattr(service,'deepseek',fake)
-    r=client.post('/internal/v1/avito/drafts',json={'description':'Укладываю кафель.','mcId':101})
-    assert r.status_code==200 and r.json()['drafts']==[{'mcId':103,'title':'Укладка кафеля','text':'Укладываю кафель.'}]
-    assert len(seen)==2
+    r=client.post('/internal/v1/avito/drafts',json={'description':'Делаю только малярные работы.','mcId':101})
+    assert r.status_code==200 and r.json()['drafts']==[]
+    assert len(seen)==0
+@pytest.mark.parametrize('source,mc,expected',[
+    ('Шпаклюю стены.',106,True),
+    ('В бригаде есть маляр, работаем вместе.',106,True),
+    ('Укладываю кафель.',103,True),
+    ('Делаю шпаклёвку и выравниваю стены.',102,False),
+    ('Ремонт гостиной под ключ.\nремонт, отделка, диван, плитка, штукатурка, обои, ламинат, свет, потолок, кухня, ванна, интерьер',103,False),
+    ('Ремонт квартиры.\nНас также ищут:\nплитка / сантехника / электрика',104,False),
+    ('Делаем сантех-шкафы из керамогранита. Изделия из керамогранита — раковины.',104,False),
+    ('Устанавливаем раковины и меняем трубы.',104,True),
+])
+def test_target_offer_sanity_check(source,mc,expected):
+    from app.main import target_offer_supported
+    assert target_offer_supported(source,mc) is expected
 def test_all_five_classifier_targets_get_independent_drafts(monkeypatch):
     monkeypatch.setenv("GENERATION_REQUEST_MODE","batch")
     import app.main as service
@@ -382,3 +437,13 @@ def test_fact_scope_regressions(source,mc,title,text):
 ])
 def test_short_factual_descriptions_remain_valid(source,mc,title,text):
     assert valid_text(source,{"title":title,"text":text},mc,semantic=True)==(title,text)
+
+def test_presentation_style_tracks_source_format():
+    from app.main import presentation_style
+    styled=presentation_style("✅ Укладка плитки\n🔹 Затирка швов")
+    assert styled["source_has_emojis"] is True
+    assert styled["source_has_bullet_list"] is True
+    assert styled["source_emoji_examples"]==["✅","🔹"]
+    plain=presentation_style("Укладываю плитку и затираю швы.")
+    assert plain["source_has_emojis"] is False
+    assert plain["source_has_bullet_list"] is False

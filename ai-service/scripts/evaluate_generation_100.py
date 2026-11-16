@@ -138,7 +138,7 @@ def update_summary(records):
     def mean(key):
         values = [r[key] for r in rows if isinstance(r.get(key), (int, float))]
         return sum(values) / len(values) if values else None
-    report = {"updatedAtUtc": datetime.now(timezone.utc).isoformat(), "plannedCases": 100,
+    report = {"updatedAtUtc": datetime.now(timezone.utc).isoformat(), "plannedCases": len(build_manifest()),
               "completedCases": len(rows), "generationOkCases": len(generated), "reviewedCases": len(reviewed),
               "qualityCases": dict(Counter(r["qualityReview"]["overall"] for r in reviewed)),
               "qualityDrafts": dict(Counter(d["quality"] for d in drafts)),
